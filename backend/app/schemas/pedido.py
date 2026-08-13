@@ -11,6 +11,7 @@ from datetime import date, datetime
 from pydantic import BaseModel, Field
 
 from app.models.pedido import StatusPedido
+from app.schemas.tipos import Utc
 
 
 class ItemEntrada(BaseModel):
@@ -60,10 +61,13 @@ class PedidoSaida(BaseModel):
     status: StatusPedido
     total_centavos: int
     observacao: str | None
-    criado_em: datetime
-    criado_em_cliente: datetime
-    impresso_em: datetime | None
-    cancelado_em: datetime | None
+    # `Utc` e não `datetime`: a tela da cozinha calcula "há quantos minutos" e
+    # o prazo de impressão em cima destes campos. Sem o fuso no JSON, a comanda
+    # parece ter sido criada horas no futuro e o alerta nunca acende.
+    criado_em: Utc
+    criado_em_cliente: Utc
+    impresso_em: Utc | None
+    cancelado_em: Utc | None
     motivo_cancelamento: str | None
     pos_fechamento: bool
     itens: list[ItemSaida]

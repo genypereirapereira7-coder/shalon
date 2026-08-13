@@ -11,15 +11,21 @@ celular do caixa. A arquitetura, as decisões e o que ainda falta estão em
 | Backend (auth, cardápio, pedidos, relatórios, fechamento) | funcionando |
 | PWA de vendas (`frontend/vendas/`) | funcionando |
 | PWA do dono (`frontend/dono/`) | funcionando |
-| PWA da cozinha | não implementado |
+| PWA da cozinha (`frontend/cozinha/`) | funcionando |
 | Agente de impressão | não implementado |
 
 O `backend/app/main.py` já monta as três pastas de PWA; as que não existem são
 simplesmente ignoradas na subida.
 
-A tela do dono atualiza os números por polling de 15s. O WebSocket (`metricas.tick`,
-`preco.alterado`) é a fase 4 — até lá, o preço editado chega no celular da loja
-na próxima atualização de cardápio, não instantaneamente.
+As telas atualizam por polling: 15s nos números do dono, 5s nas comandas da
+cozinha. O WebSocket (`metricas.tick`, `pedido.novo`, `preco.alterado`) é o que
+falta da fase 4 — até lá, o preço editado chega no celular da loja na próxima
+atualização de cardápio, não instantaneamente.
+
+A tela da cozinha acusa impressora travada (comanda sem confirmação de impressão
+em 15s pulsa em vermelho, com botão de reimprimir), mas quem imprime de verdade
+é o agente da fase 3, que ainda não existe. Sem ele, toda comanda vai acender o
+alerta.
 
 ## Rodar localmente
 
@@ -90,11 +96,13 @@ Com o servidor no ar:
 | --- | --- | --- |
 | PWA de vendas | http://127.0.0.1:8000/vendas/ | João, PIN `1234` |
 | PWA do dono | http://127.0.0.1:8000/dono/ | Dono, senha `shalon123` |
+| PWA da cozinha | http://127.0.0.1:8000/cozinha/ | Cozinha, PIN `0000` |
 | Docs da API (Swagger) | http://127.0.0.1:8000/docs | — |
 | Health check | http://127.0.0.1:8000/health | — |
 
-Os dois PWAs guardam a sessão separada (`shalon.sessao.vendas` e
-`shalon.sessao.dono`), então dá pra ficar logado nos dois no mesmo navegador.
+Cada PWA guarda a sessão separada — a chave leva o nome da pasta
+(`shalon.sessao.vendas`, `.dono`, `.cozinha`) —, então dá pra ficar logado nos
+três no mesmo navegador.
 
 O `/health` diz se o banco respondeu e qual é o dia operacional corrente:
 

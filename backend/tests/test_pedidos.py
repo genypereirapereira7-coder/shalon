@@ -520,3 +520,68 @@ async def test_pedido_inexistente_da_404(cliente, dados, entrar):
         f"/pedidos/{uuid.uuid4()}/cancelar", json={"motivo": "nada"}, headers=dono
     )
     assert resposta.status_code == 404
+
+
+# ------------------------------------------------ filtro de status da cozinha
+
+async def test_hoje_filtra_por_status(cliente, dados, entrar, caixa):
+    """A tela da cozinha recarrega a cada poucos segundos.
+
+    Sem o filtro ela baixaria o dia inteiro — num sábado, quase tudo comanda
+    já entregue — só pra mostrar as três que ainda estão em produção.
+    """
+    a = (await cliente.post("/pedidos", json=corpo(dados, (dados["casquinha"], 1)), headers=caixa)).json()
+    b = (await cliente.post("/pedidos", json=corpo(dados, (dados["acai"], 1)), headers=caixa)).json()
+    await cliente.post("/pedidos", json=corpo(dados, (dados["casquinha"], 2)), headers=caixa)
+
+    # Quem muda status é a cozinha, não o balcão.
+    cozinha = await entrar(dados["cozinha"].id, "0000")
+    await cliente.patch(f"/pedidos/{a['id']}/status", json={"status": "ENTREGUE"}, headers=cozinha)
+    await cliente.patch(f"/pedidos/{b['id']}/status", json={"status": "EM_PREPARO"}, headers=cozinha)
+
+    todos = (await cliente.get("/pedidos/hoje", headers=caixa)).json()
+    assert len(todos) == 3
+
+    em_producao = (
+        await cliente.get(
+            "/pedidos/hoje",
+            params=[("status", "RECEBIDO"), ("status", "EM_PREPARO"), ("status", "PRONTO")],
+            headers=caixa,
+        )
+    ).json()
+
+    assert {p["status"] for p in em_producao} == {"RECEBIDO", "EM_PREPARO"}
+    assert len(em_producao) == 2
+    # E continua na ordem da numeração: a cozinha produz na ordem da venda.
+    assert [p["numero_dia"] for p in em_producao] == sorted(p["numero_dia"] for p in em_producao)
+
+
+async def test_status_invalido_no_filtro_e_recusado(cliente, caixa):
+    resposta = await cliente.get("/pedidos/hoje", params={"status": "VOANDO"}, headers=caixa)
+    assert resposta.status_code == 422
+
+
+async def test_datas_do_pedido_levam_o_fuso(cliente, dados, entrar, caixa):
+    """Sem o "Z" no JSON, o navegador lê a hora UTC como local.
+
+    A tela da cozinha calcula "há quantos minutos" e o prazo de impressão em
+    cima destes campos: deslocados, a comanda parece criada no futuro e o
+    alerta de impressora travada nunca acende. O Postgres devolve datetime com
+    fuso e o SQLite sem — então o descuido some em produção e vive em dev.
+    """
+    criado = (
+        await cliente.post("/pedidos", json=corpo(dados, (dados["casquinha"], 1)), headers=caixa)
+    ).json()
+
+    agente = await entrar(dados["agente"].id, "0000")
+    await cliente.post(f"/pedidos/{criado['id']}/impresso", headers=agente)
+
+    pedido = (await cliente.get("/pedidos/hoje", headers=caixa)).json()[0]
+
+    for campo in ("criado_em", "criado_em_cliente", "impresso_em"):
+        valor = pedido[campo]
+        assert valor.endswith("Z") or "+00:00" in valor, f"{campo}: {valor}"
+
+    # E a data lida de volta tem que ser do passado, não do futuro.
+    criado_em = datetime.fromisoformat(pedido["criado_em"])
+    assert criado_em <= datetime.now(UTC)

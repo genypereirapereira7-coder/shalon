@@ -5,9 +5,11 @@ sistema, e sai arredondada aqui — deixar o celular dividir daria um centavo de
 diferença entre a tela do dono e o fechamento.
 """
 
-from datetime import date, datetime
+from datetime import date
 
 from pydantic import BaseModel, Field
+
+from app.schemas.tipos import Utc
 
 
 class ItemVendido(BaseModel):
@@ -30,7 +32,7 @@ class FechamentoSaida(BaseModel):
     data_operacional: date
     total_centavos: int
     qtd_pedidos: int
-    fechado_em: datetime
+    fechado_em: Utc
     fechado_por: int
     fechado_por_nome: str
 
@@ -69,7 +71,7 @@ class ResumoDia(BaseModel):
 
     # Hora do servidor, não do celular: é ela que a tela mostra em "atualizado
     # às 19:42" quando a conexão cai e os números congelam.
-    apurado_em: datetime
+    apurado_em: Utc
 
 
 class FecharEntrada(BaseModel):

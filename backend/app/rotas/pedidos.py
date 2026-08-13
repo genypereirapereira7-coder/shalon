@@ -1,8 +1,9 @@
 """Pedidos: criação pelo celular, fila de impressão e ciclo de status."""
 
 import uuid
+from typing import Annotated
 
-from fastapi import APIRouter, HTTPException, Response, status
+from fastapi import APIRouter, HTTPException, Query, Response, status
 from sqlalchemy import select
 
 from app.dependencias import IdentidadeDep, SessaoDep, SoAgente, SoCozinha, SoDono
@@ -61,14 +62,23 @@ async def criar_pedido(
 
 
 @rotas.get("/hoje", response_model=list[PedidoSaida])
-async def pedidos_de_hoje(sessao: SessaoDep, _: IdentidadeDep):
-    """Pedidos do dia operacional corrente, na ordem em que foram numerados."""
-    consulta = (
-        select(Pedido)
-        .where(Pedido.data_operacional == dia_atual())
-        .order_by(Pedido.numero_dia)
-    )
-    return [_saida(p) for p in (await sessao.execute(consulta)).scalars()]
+async def pedidos_de_hoje(
+    sessao: SessaoDep,
+    _: IdentidadeDep,
+    status_: Annotated[list[StatusPedido] | None, Query(alias="status")] = None,
+):
+    """Pedidos do dia operacional corrente, na ordem em que foram numerados.
+
+    O filtro de status existe pela tela da cozinha: ela recarrega de poucos em
+    poucos segundos e só precisa do que ainda está em produção. Num sábado à
+    noite, baixar o dia inteiro — com itens e acompanhamentos — a cada 5s seria
+    quase tudo comanda já entregue.
+    """
+    consulta = select(Pedido).where(Pedido.data_operacional == dia_atual())
+    if status_:
+        consulta = consulta.where(Pedido.status.in_(status_))
+
+    return [_saida(p) for p in (await sessao.execute(consulta.order_by(Pedido.numero_dia))).scalars()]
 
 
 @rotas.get("/nao-impressos", response_model=list[PedidoSaida])

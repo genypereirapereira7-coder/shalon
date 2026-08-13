@@ -44,6 +44,6 @@ shalon.app.br {
 	}
 
 	# Service worker nunca pode ficar em cache, senão o PWA congela numa versão velha
-	@sw path /vendas/sw.js /dono/sw.js
+	@sw path /vendas/sw.js /dono/sw.js /cozinha/sw.js
 	header @sw Cache-Control "no-cache, no-store, must-revalidate"
 }

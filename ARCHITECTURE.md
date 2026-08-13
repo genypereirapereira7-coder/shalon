@@ -450,7 +450,7 @@ Deixados de fora de propósito, com o ponto de extensão já mapeado:
 | 1 | Modelos, cardápio (com acompanhamentos), login por PIN | Cardápio impresso inteiro no banco | ✅ |
 | 2 | PWA Vendas: cardápio, carrinho, envio | Pedido cai no banco pelo celular | ✅ |
 | 3 | Agente + impressão + reimpressão | **Sai papel na impressora** | ⬜ |
-| 4 | WebSocket + tela da cozinha com status | Pedido aparece na cozinha na hora | ⬜ |
+| 4 | WebSocket + tela da cozinha com status | Pedido aparece na cozinha na hora | 🟡 |
 | 5 | PWA Dono: números ao vivo + editar preço | Preço muda no celular da loja na hora | ✅ |
 | 6 | Fechamento do dia por item e total | O relatório bate com o caixa | ✅ |
 | 7 | Deploy, HTTPS, instalar os PWAs, backup | Rodando na sorveteria de verdade | ⬜ |
@@ -459,9 +459,12 @@ A fase 3 é a de maior risco — é a única que depende de hardware físico. At
 chegar, uso a `ImpressoraFake` (escreve o cupom num arquivo de texto) e todo o resto é
 construído normalmente.
 
+A fase 4 está 🟡 e não ✅ porque só a metade visível ficou pronta: a tela da cozinha
+existe e funciona, mas atualiza por polling. O `/ws` é o que falta.
+
 ### O que já está de pé
 
-Backend com 62 testes passando: login por PIN com trava de força bruta e refresh
+Backend com 96 testes passando: login por PIN com trava de força bruta e refresh
 rotativo, cardápio com auditoria de preço, e a API de pedidos inteira — criação
 idempotente por `id_cliente`, numeração atômica do dia, snapshot de preço, fila de
 impressão (`/pedidos/nao-impressos`, `/pedidos/{id}/impresso`, `/reimprimir`), ciclo
@@ -496,9 +499,28 @@ recusa em vez de congelar um número que o dono não aprovou. Venda que sobe da
 fila offline depois disso entra marcada como `pos_fechamento` e aparece
 destacada — sem isso o dono compararia relatório e gaveta e acharia que faltou.
 
-**O "ao vivo" da tela Hoje ainda é polling de 15s**, não WebSocket. A fase 4
-troca `agendarAtualizacao()` pela assinatura de `metricas.tick` e o resto da
-tela não muda. Do mesmo jeito, o preço editado chega no balcão na próxima
+Tela da Cozinha rodando em `frontend/cozinha/`, no monitor do PC da produção.
+Ela é a única tela que ninguém fica olhando: comanda nova entra com som e vai
+pro topo da fila, porque o custo de passar despercebida é o cliente esperando
+um sorvete que ninguém começou. Comanda sem ACK de impressão em 15s (§6) pulsa
+em vermelho com o botão REIMPRIMIR — descobrir a impressora travada pelo
+cliente reclamando é o jeito errado. Queda de conexão não limpa a lista: as
+comandas ficam com um aviso de que parou de atualizar, porque sumir com o
+pedido de alguém é pior do que mostrá-lo velho.
+
+Duas coisas no backend nasceram dessa tela. `/pedidos/hoje` ganhou filtro de
+status: recarregando de 5 em 5s, baixar o dia inteiro num sábado seria quase
+tudo comanda já entregue. E as datas de saída passaram a usar o tipo `Utc`
+(`app/schemas/tipos.py`) em vez de `datetime` cru — sem o fuso no JSON o
+navegador lê a hora UTC como local, a comanda parece criada três horas no
+futuro e o alerta de impressora travada nunca acende. Como o Postgres devolve
+datetime com fuso e o SQLite sem, esse descuido só aparece em dev, onde é fácil
+culpar "coisa do SQLite" e seguir.
+
+**O "ao vivo" ainda é polling em todas as telas**, não WebSocket: 15s na tela
+Hoje do dono, 5s na cozinha. A fase 4 troca `agendarAtualizacao()` e `agendar()`
+pelas assinaturas de `metricas.tick` e `pedido.novo`/`pedido.status`, e o resto
+das telas não muda. Do mesmo jeito, o preço editado chega no balcão na próxima
 atualização de cardápio, não em menos de 1 segundo como promete a §2.3 — é o
 mesmo TODO de `preco.alterado` no WebSocket.
 

@@ -1,8 +1,9 @@
 """Login por PIN/senha, renovação de token e logout."""
 
 from datetime import timedelta
+from typing import Annotated
 
-from fastapi import APIRouter, HTTPException, Request, status
+from fastapi import APIRouter, HTTPException, Query, Request, status
 from sqlalchemy import select
 
 from app.config import get_config
@@ -23,15 +24,32 @@ rotas = APIRouter(prefix="/auth", tags=["auth"])
 
 
 @rotas.get("/usuarios", response_model=list[UsuarioPublico])
-async def listar_usuarios(sessao: SessaoDep):
-    """Lista pra tela de login escolher quem está no caixa.
+async def listar_usuarios(
+    sessao: SessaoDep,
+    papel: Annotated[list[Papel] | None, Query()] = None,
+):
+    """Lista pra tela de login escolher quem vai entrar.
 
     Só nome e papel — nenhum dado sensível. PIN continua sendo o segredo.
-    Agente e tela da cozinha não aparecem: eles não logam por essa tela.
+
+    Sem filtro devolve quem loga no balcão (dono e funcionário), que é o padrão
+    do PWA de vendas. A tela da cozinha pede `?papel=COZINHA&papel=DONO`: ela
+    também precisa de uma lista pra login, e sem isto não teria como descobrir
+    o id do próprio usuário.
+
+    O agente de impressão nunca aparece, com ou sem filtro: é conta de máquina,
+    não loga por tela nenhuma, e o PIN dela é fraco de propósito.
     """
+    pedidos = papel or [Papel.DONO, Papel.FUNCIONARIO]
+    visiveis = [p for p in pedidos if p is not Papel.AGENTE]
+    if not visiveis:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST, "O agente de impressão não entra por tela de login"
+        )
+
     consulta = (
         select(Usuario)
-        .where(Usuario.ativo.is_(True), Usuario.papel.in_([Papel.DONO, Papel.FUNCIONARIO]))
+        .where(Usuario.ativo.is_(True), Usuario.papel.in_(visiveis))
         .order_by(Usuario.nome)
     )
     return list((await sessao.execute(consulta)).scalars())

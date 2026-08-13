@@ -112,3 +112,34 @@ async def test_pin_curto_demais_e_recusado(cliente, dados, segredo):
         "/auth/login", json={"usuario_id": dados["joao"].id, "segredo": segredo}
     )
     assert resposta.status_code == 422
+
+
+# ------------------------------------------------- lista pra tela de login
+
+async def test_lista_padrao_e_do_balcao(cliente, dados):
+    """Sem filtro é a lista do PWA de vendas: quem atende no balcão."""
+    usuarios = (await cliente.get("/auth/usuarios")).json()
+
+    assert {u["papel"] for u in usuarios} == {"DONO", "FUNCIONARIO"}
+
+
+async def test_cozinha_pede_a_propria_lista(cliente, dados):
+    """A tela da cozinha precisa descobrir o id dela pra montar o login."""
+    usuarios = (
+        await cliente.get("/auth/usuarios", params=[("papel", "COZINHA"), ("papel", "DONO")])
+    ).json()
+
+    assert {u["papel"] for u in usuarios} == {"COZINHA", "DONO"}
+    assert {u["nome"] for u in usuarios} == {"Cozinha", "Dona Shalon"}
+
+
+async def test_agente_nunca_aparece_na_lista(cliente, dados):
+    """Conta de máquina, PIN fraco de propósito: não entra por tela de login."""
+    resposta = await cliente.get("/auth/usuarios", params={"papel": "AGENTE"})
+    assert resposta.status_code == 400
+
+    # E nem de carona junto de um papel válido.
+    usuarios = (
+        await cliente.get("/auth/usuarios", params=[("papel", "AGENTE"), ("papel", "COZINHA")])
+    ).json()
+    assert {u["papel"] for u in usuarios} == {"COZINHA"}

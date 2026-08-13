@@ -19,7 +19,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.sql.elements import ColumnElement
 
-from app.models.base import agora, como_utc
+from app.models.base import agora
 from app.models.fechamento import FechamentoDia
 from app.models.pedido import Pedido, PedidoItem, StatusPedido
 from app.models.usuario import Usuario
@@ -233,11 +233,9 @@ def _saida_fechamento(fechamento: FechamentoDia, nome: str) -> FechamentoSaida:
         data_operacional=fechamento.data_operacional,
         total_centavos=fechamento.total_centavos,
         qtd_pedidos=fechamento.qtd_pedidos,
-        # `como_utc` não é enfeite: o SQLite devolve datetime sem fuso, e sem o
-        # "Z" no JSON o celular lê a hora UTC como se fosse local — o dono veria
-        # o caixa fechado três horas no futuro. O Postgres devolve com fuso, o
-        # que faria o bug aparecer só em dev e passar batido.
-        fechado_em=como_utc(fechamento.fechado_em),
+        # O fuso é garantido pelo tipo `Utc` do schema, não aqui: ver
+        # `app/schemas/tipos.py` pra por que essa normalização é do schema.
+        fechado_em=fechamento.fechado_em,
         fechado_por=fechamento.fechado_por,
         fechado_por_nome=nome,
     )
