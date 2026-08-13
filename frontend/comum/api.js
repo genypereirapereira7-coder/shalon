@@ -13,7 +13,15 @@
  *    manda o pedido pra fila, a segunda avisa o funcionário na cara.
  */
 
-const CHAVE_SESSAO = "shalon.sessao";
+// A chave leva o nome do PWA (`/vendas/…` → "vendas") porque os três rodam na
+// mesma origem e dividiriam o mesmo localStorage. Sem isto, o dono que instala
+// os dois apps no celular dele desloga de um toda vez que entra no outro — e,
+// pior, o app de vendas abriria já logado com o token do dono.
+const CHAVE_SESSAO = `shalon.sessao.${_app()}`;
+
+function _app() {
+  return location.pathname.split("/").filter(Boolean)[0] || "raiz";
+}
 
 /** O servidor recusou: 4xx/5xx com resposta. Reenviar não resolve. */
 export class ErroApi extends Error {

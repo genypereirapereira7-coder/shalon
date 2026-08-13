@@ -1,0 +1,179 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1">
+<title>Shalon — Dono</title>
+<meta name="theme-color" content="#7a5a9c">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icone-192.png">
+<link rel="apple-touch-icon" href="icone-192.png">
+<link rel="stylesheet" href="../comum/estilo.css">
+<link rel="stylesheet" href="dono.css">
+</head>
+<body>
+
+<!-- ============================================================== LOGIN -->
+<section id="tela-login" class="login">
+  <h1 class="login__marca">Shalon</h1>
+  <p class="login__papel">Painel do dono</p>
+
+  <div id="login-lista" class="login__caixa">
+    <p class="login__titulo">Entrar como</p>
+    <div id="usuarios" class="login__usuarios"></div>
+    <p id="login-carregando" class="fraco">Carregando…</p>
+    <button id="login-recarregar" class="botao botao--fantasma" hidden>Tentar de novo</button>
+  </div>
+
+  <div id="login-senha" class="login__caixa" hidden>
+    <button id="senha-voltar" class="login__voltar">‹ Trocar</button>
+    <p class="login__titulo"><span id="senha-nome"></span>, digite a senha</p>
+
+    <!-- Senha, não PIN: o dono tem senha de verdade, então aqui é o teclado
+         do próprio celular — sem o teclado numérico da tela de vendas. -->
+    <input id="senha-campo" class="login__senha" type="password"
+           autocomplete="current-password" maxlength="72" aria-label="Senha">
+
+    <p id="login-erro" class="login__erro" hidden></p>
+    <button id="senha-entrar" class="botao login__entrar">ENTRAR</button>
+  </div>
+</section>
+
+<!-- ============================================================== PAINEL -->
+<section id="tela-painel" class="painel-dono" hidden>
+
+  <header class="topo">
+    <span class="topo__marca">Shalon</span>
+    <button id="btn-usuario" class="topo__usuario">
+      <span class="ponto" id="ponto-conexao"></span>
+      <span id="nome-usuario"></span>
+      <span aria-hidden="true">▾</span>
+    </button>
+  </header>
+
+  <div id="faixa-erro" class="faixa faixa--erro" hidden></div>
+
+  <nav class="abas" aria-label="Seções">
+    <button class="abas__t" data-aba="hoje" aria-current="true">Hoje</button>
+    <button class="abas__t" data-aba="cardapio" aria-current="false">Cardápio</button>
+    <button class="abas__t" data-aba="fechamento" aria-current="false">Fechamento</button>
+  </nav>
+
+  <!-- ------------------------------------------------------------- HOJE -->
+  <main id="aba-hoje" class="conteudo">
+    <p id="hoje-carimbo" class="carimbo">Carregando…</p>
+
+    <div class="numeros">
+      <div class="numero numero--destaque">
+        <span class="numero__rotulo">Vendido hoje</span>
+        <strong class="numero__valor" id="n-total">—</strong>
+      </div>
+      <div class="numero">
+        <span class="numero__rotulo">Pedidos</span>
+        <strong class="numero__valor" id="n-pedidos">—</strong>
+      </div>
+      <div class="numero">
+        <span class="numero__rotulo">Ticket médio</span>
+        <strong class="numero__valor" id="n-ticket">—</strong>
+      </div>
+    </div>
+
+    <div id="alerta-pos" class="faixa faixa--atencao" hidden></div>
+    <div id="alerta-cancelados" class="faixa faixa--atencao" hidden></div>
+    <div id="alerta-fechado" class="faixa faixa--ok" hidden></div>
+
+    <section class="bloco">
+      <h2 class="bloco__titulo">Mais vendidos</h2>
+      <ul id="hoje-itens" class="ranking"></ul>
+    </section>
+
+    <section class="bloco">
+      <h2 class="bloco__titulo">Por atendente</h2>
+      <ul id="hoje-atendentes" class="ranking"></ul>
+    </section>
+  </main>
+
+  <!-- --------------------------------------------------------- CARDÁPIO -->
+  <main id="aba-cardapio" class="conteudo" hidden>
+    <p class="fraco conteudo__dica">
+      Toque no preço pra mudar. O celular da loja pega o preço novo na próxima
+      atualização do cardápio.
+    </p>
+    <div id="lista-cardapio"></div>
+  </main>
+
+  <!-- ------------------------------------------------------ FECHAMENTO -->
+  <main id="aba-fechamento" class="conteudo" hidden>
+    <section class="bloco">
+      <div class="bloco__cabeca">
+        <h2 class="bloco__titulo" id="fech-titulo">Fechamento de hoje</h2>
+        <button id="fech-hoje" class="ligacao" hidden>Voltar pra hoje</button>
+      </div>
+
+      <div class="numeros numeros--duplo">
+        <!-- "do dia", não "Total": num dia já fechado que recebeu venda
+             atrasada, este número é maior que o do fechamento gravado. O
+             rótulo genérico faria o dono ler o valor errado como o fechado. -->
+        <div class="numero numero--destaque">
+          <span class="numero__rotulo">Total do dia</span>
+          <strong class="numero__valor" id="f-total">—</strong>
+        </div>
+        <div class="numero">
+          <span class="numero__rotulo">Pedidos</span>
+          <strong class="numero__valor" id="f-pedidos">—</strong>
+        </div>
+      </div>
+
+      <p id="f-situacao" class="fraco"></p>
+      <button id="btn-fechar" class="botao" hidden>FECHAR O CAIXA DO DIA</button>
+    </section>
+
+    <section class="bloco">
+      <h2 class="bloco__titulo">Detalhe por item</h2>
+      <ul id="f-itens" class="ranking"></ul>
+    </section>
+
+    <section class="bloco">
+      <h2 class="bloco__titulo">Dias fechados</h2>
+      <ul id="f-historico" class="historico"></ul>
+    </section>
+  </main>
+</section>
+
+<!-- ============================================================= PAINÉIS -->
+<div id="painel" class="painel" hidden>
+  <div class="painel__fundo" data-fechar></div>
+
+  <div id="painel-usuario" class="painel__folha">
+    <p class="painel__titulo" id="painel-usuario-nome"></p>
+    <p class="fraco" id="painel-versao"></p>
+    <button id="btn-atualizar" class="botao botao--fantasma">Atualizar agora</button>
+    <button id="btn-sair" class="botao botao--perigo">Sair</button>
+    <button class="botao botao--fantasma" data-fechar>Fechar</button>
+  </div>
+</div>
+
+<!-- Confirmação do fechamento. É gravação imutável: não pode sair por toque
+     acidental, e `confirm()` do navegador trava a tela toda no PWA. -->
+<div id="confirmar" class="painel" hidden>
+  <div class="painel__fundo" data-fechar-confirmar></div>
+
+  <div class="painel__folha">
+    <p class="painel__titulo">Fechar o caixa?</p>
+    <p id="confirmar-texto"></p>
+    <p class="fraco">
+      O total fica gravado e não muda mais. Venda que subir depois da fila
+      offline entra marcada como “depois do fechamento”.
+    </p>
+    <button id="confirmar-sim" class="botao">CONFIRMAR FECHAMENTO</button>
+    <button class="botao botao--fantasma" data-fechar-confirmar>Cancelar</button>
+  </div>
+</div>
+
+<div id="aviso" class="aviso" role="status" aria-live="polite"></div>
+
+<script type="module" src="app.js"></script>
+</body>
+</html>

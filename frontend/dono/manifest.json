@@ -1,0 +1,35 @@
+{
+  "name": "Shalon Dono",
+  "short_name": "Dono",
+  "description": "Os números da sorveteria Shalon: vendas do dia, preços e fechamento.",
+  "start_url": "./",
+  "scope": "./",
+  "id": "/dono/",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#f4f0f8",
+  "theme_color": "#7a5a9c",
+  "lang": "pt-BR",
+  "dir": "ltr",
+  "categories": ["business", "finance"],
+  "icons": [
+    {
+      "src": "icone-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "icone-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "icone-mascara-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}

@@ -8,13 +8,18 @@ celular do caixa. A arquitetura, as decisões e o que ainda falta estão em
 
 | Parte | Estado |
 | --- | --- |
-| Backend (auth, cardápio, pedidos, dia operacional) | funcionando |
+| Backend (auth, cardápio, pedidos, relatórios, fechamento) | funcionando |
 | PWA de vendas (`frontend/vendas/`) | funcionando |
-| PWA do dono | não implementado |
+| PWA do dono (`frontend/dono/`) | funcionando |
 | PWA da cozinha | não implementado |
+| Agente de impressão | não implementado |
 
 O `backend/app/main.py` já monta as três pastas de PWA; as que não existem são
 simplesmente ignoradas na subida.
+
+A tela do dono atualiza os números por polling de 15s. O WebSocket (`metricas.tick`,
+`preco.alterado`) é a fase 4 — até lá, o preço editado chega no celular da loja
+na próxima atualização de cardápio, não instantaneamente.
 
 ## Rodar localmente
 
@@ -81,11 +86,15 @@ docker compose exec api python -m app.seed
 
 Com o servidor no ar:
 
-| O quê | Link |
-| --- | --- |
-| PWA de vendas | http://127.0.0.1:8000/vendas/ |
-| Docs da API (Swagger) | http://127.0.0.1:8000/docs |
-| Health check | http://127.0.0.1:8000/health |
+| O quê | Link | Entrar como |
+| --- | --- | --- |
+| PWA de vendas | http://127.0.0.1:8000/vendas/ | João, PIN `1234` |
+| PWA do dono | http://127.0.0.1:8000/dono/ | Dono, senha `shalon123` |
+| Docs da API (Swagger) | http://127.0.0.1:8000/docs | — |
+| Health check | http://127.0.0.1:8000/health | — |
+
+Os dois PWAs guardam a sessão separada (`shalon.sessao.vendas` e
+`shalon.sessao.dono`), então dá pra ficar logado nos dois no mesmo navegador.
 
 O `/health` diz se o banco respondeu e qual é o dia operacional corrente:
 

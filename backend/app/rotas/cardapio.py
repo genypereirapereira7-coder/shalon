@@ -23,20 +23,26 @@ rotas = APIRouter(tags=["cardapio"])
 
 
 @rotas.get("/cardapio", response_model=CardapioSaida)
-async def cardapio(sessao: SessaoDep, _: IdentidadeDep):
+async def cardapio(sessao: SessaoDep, _: IdentidadeDep, incluir_inativos: bool = False):
     """Categorias, produtos ativos e os acompanhamentos de cada um.
 
     Vai tudo numa resposta só de propósito: o PWA guarda isto em cache e
     precisa montar a tela de acompanhamentos sem internet — se as opções
     viessem numa segunda chamada, a venda offline pararia na hora de escolher
     a granola.
+
+    `incluir_inativos` é da tela do dono: sem ele, desativar um produto o faria
+    sumir da própria tela que o desativou, sem jeito de reativar. O balcão
+    nunca manda esse parâmetro — item fora de linha não pode virar botão de
+    venda.
     """
     consulta = (
         select(Categoria)
-        .where(Categoria.ativo.is_(True))
         .options(selectinload(Categoria.produtos))
         .order_by(Categoria.ordem, Categoria.nome)
     )
+    if not incluir_inativos:
+        consulta = consulta.where(Categoria.ativo.is_(True))
     categorias = list((await sessao.execute(consulta)).scalars())
     versao = (await sessao.execute(select(func.max(Produto.atualizado_em)))).scalar_one_or_none()
 
@@ -55,7 +61,7 @@ async def cardapio(sessao: SessaoDep, _: IdentidadeDep):
                         grupos=grupos_por_produto.get(p.id, []),
                     )
                     for p in sorted(c.produtos, key=lambda p: (p.ordem, p.nome))
-                    if p.ativo
+                    if p.ativo or incluir_inativos
                 ],
             )
             for c in categorias

@@ -1,0 +1,567 @@
+/*
+ * PWA do Dono.
+ *
+ * Mesma base de `comum/estilo.css`, mas com uma diferença de propósito: a tela
+ * de vendas é feita pra dedo apressado num balcão; esta é feita pra ser LIDA.
+ * Por isso o número do dia é enorme e o resto se apaga em volta dele — o dono
+ * abre o app, olha um segundo e fecha.
+ *
+ * O roxo no lugar do rosa não é enfeite: os dois PWAs ficam lado a lado na
+ * tela inicial do celular e precisam se distinguir de relance.
+ */
+
+:root {
+  --dono: var(--roxo);
+  --dono-fundo: #f4f0f8;
+  --verde-fundo: #e6f5ee;
+}
+
+/* ===================================================================== login */
+
+.login {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  min-height: 100%;
+  padding: 24px 20px calc(24px + var(--seguro-baixo));
+  background: var(--dono-fundo);
+}
+
+.login__marca {
+  margin: 0;
+  color: var(--dono);
+  font-size: 40px;
+  letter-spacing: 0.5px;
+}
+
+.login__papel {
+  margin: 0 0 12px;
+  color: var(--tinta-fraca);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 1.5px;
+  font-size: 13px;
+}
+
+.login__caixa {
+  position: relative;
+  width: min(100%, 420px);
+  padding: 20px;
+  background: var(--papel);
+  border-radius: var(--raio);
+  box-shadow: var(--sombra);
+}
+
+.login__titulo {
+  margin: 0 0 14px;
+  font-weight: 700;
+  text-align: center;
+}
+
+.login__voltar {
+  position: absolute;
+  top: 12px;
+  left: 10px;
+  padding: 6px 10px;
+  color: var(--tinta-fraca);
+  font-size: 15px;
+}
+
+.login__usuarios {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.login__usuarios button {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: var(--alvo);
+  padding: 0 18px;
+  border: 1px solid var(--linha);
+  border-radius: var(--raio);
+  background: var(--papel);
+  font-weight: 700;
+  text-align: left;
+}
+
+.login__usuarios button:active {
+  background: var(--dono-fundo);
+}
+
+.login__usuarios .papel {
+  color: var(--tinta-fraca);
+  font-size: 13px;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+.login__senha {
+  width: 100%;
+  min-height: var(--alvo);
+  margin-bottom: 14px;
+  padding: 0 16px;
+  border: 2px solid var(--linha);
+  border-radius: var(--raio);
+  background: var(--fundo);
+  font-size: 20px;
+  letter-spacing: 2px;
+}
+
+.login__senha:focus {
+  border-color: var(--dono);
+  outline: none;
+}
+
+.login__erro {
+  margin: 0 0 12px;
+  color: var(--vermelho);
+  font-weight: 600;
+  text-align: center;
+}
+
+.login__entrar {
+  width: 100%;
+  background: var(--dono);
+}
+
+/* ====================================================================== topo */
+
+.painel-dono {
+  display: flex;
+  flex-direction: column;
+  min-height: 100%;
+}
+
+.topo {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: calc(10px + var(--seguro-topo)) 14px 10px;
+  background: var(--dono);
+  color: #fff;
+}
+
+.topo__marca {
+  flex: 1;
+  font-size: 19px;
+  font-weight: 700;
+}
+
+.topo__usuario {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 0 12px;
+  border-radius: var(--raio);
+  background: rgb(255 255 255 / 16%);
+  color: #fff;
+  font-weight: 600;
+}
+
+/* ====================================================================== abas */
+
+.abas {
+  display: flex;
+  gap: 6px;
+  padding: 10px 12px;
+  background: var(--papel);
+  border-bottom: 1px solid var(--linha);
+}
+
+.abas__t {
+  flex: 1;
+  min-height: 44px;
+  border-radius: var(--raio);
+  color: var(--tinta-fraca);
+  font-weight: 700;
+}
+
+.abas__t[aria-current="true"] {
+  background: var(--dono-fundo);
+  color: var(--dono);
+}
+
+/* ================================================================= conteúdo */
+
+.conteudo {
+  flex: 1;
+  padding: 14px 12px calc(24px + var(--seguro-baixo));
+  overflow-y: auto;
+}
+
+.conteudo__dica {
+  margin: 0 4px 12px;
+  font-size: 14px;
+}
+
+.carimbo {
+  margin: 0 4px 12px;
+  color: var(--tinta-fraca);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+/* Números velhos: a conexão caiu e o que está na tela é o último que chegou.
+   Mostrar o número normal aqui seria mentir sobre o movimento de agora. */
+.carimbo[data-velho="1"] {
+  color: var(--amarelo);
+}
+
+.numeros {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+/* Só dois números aqui, e o de baixo sozinho em meia largura ficava com um
+   buraco ao lado. Empilhados, a coluna fica intencional. */
+.numeros--duplo {
+  margin-bottom: 12px;
+}
+
+.numeros--duplo .numero {
+  grid-column: 1 / -1;
+}
+
+.numero {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 14px 16px;
+  background: var(--papel);
+  border-radius: var(--raio);
+  box-shadow: var(--sombra);
+}
+
+/* O total do dia ocupa a linha toda: é o único número que o dono abre o app
+   pra ver. Os outros dois são contexto. */
+.numero--destaque {
+  grid-column: 1 / -1;
+}
+
+.numero__rotulo {
+  color: var(--tinta-fraca);
+  font-size: 13px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.numero__valor {
+  font-size: 26px;
+  font-variant-numeric: tabular-nums;
+}
+
+.numero--destaque .numero__valor {
+  color: var(--dono);
+  font-size: 40px;
+  line-height: 1.1;
+}
+
+.faixa--ok {
+  background: var(--verde-fundo);
+  color: var(--verde);
+}
+
+.faixa {
+  margin-bottom: 10px;
+  border-radius: var(--raio);
+}
+
+/* ==================================================================== blocos */
+
+.bloco {
+  margin-bottom: 14px;
+  padding: 14px 16px;
+  background: var(--papel);
+  border-radius: var(--raio);
+  box-shadow: var(--sombra);
+}
+
+.bloco__cabeca {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.bloco__titulo {
+  margin: 0 0 10px;
+  font-size: 15px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--tinta-fraca);
+}
+
+.ligacao {
+  padding: 6px 0;
+  color: var(--dono);
+  font-size: 14px;
+  font-weight: 700;
+}
+
+/* =================================================================== ranking */
+
+.ranking {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.ranking li {
+  display: grid;
+  grid-template-columns: 2.6em 1fr auto;
+  align-items: baseline;
+  gap: 10px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--linha);
+}
+
+.ranking li:last-child {
+  border-bottom: 0;
+}
+
+.ranking .qtd {
+  color: var(--dono);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.ranking .nome {
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.ranking .valor {
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.ranking .vazio {
+  display: block;
+  padding: 14px 0;
+  color: var(--tinta-fraca);
+  text-align: center;
+  border: 0;
+}
+
+/* ================================================================= histórico */
+
+.historico {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.historico button {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: baseline;
+  gap: 8px;
+  width: 100%;
+  min-height: var(--alvo);
+  padding: 10px 6px;
+  border-bottom: 1px solid var(--linha);
+  text-align: left;
+}
+
+.historico button:active {
+  background: var(--dono-fundo);
+}
+
+.historico .data {
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.historico .quem {
+  grid-column: 1;
+  color: var(--tinta-fraca);
+  font-size: 13px;
+}
+
+.historico .total {
+  grid-row: 1 / span 2;
+  grid-column: 2;
+  align-self: center;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ================================================================== cardápio */
+
+.categoria {
+  margin-bottom: 14px;
+  background: var(--papel);
+  border-radius: var(--raio);
+  box-shadow: var(--sombra);
+  overflow: hidden;
+}
+
+.categoria__nome {
+  margin: 0;
+  padding: 12px 16px;
+  background: var(--dono-fundo);
+  color: var(--dono);
+  font-size: 14px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.linha {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px 8px 16px;
+  border-bottom: 1px solid var(--linha);
+}
+
+.linha:last-child {
+  border-bottom: 0;
+}
+
+.linha[data-inativo="1"] .linha__nome {
+  color: var(--tinta-fraca);
+  text-decoration: line-through;
+}
+
+.linha__nome {
+  flex: 1;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+/* O preço é o alvo de toque, então ele parece um botão de verdade — não um
+   texto que por acaso responde ao dedo. */
+.linha__preco {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  min-width: 96px;
+  min-height: 44px;
+  padding: 0 12px;
+  border: 1px solid var(--linha);
+  border-radius: 10px;
+  background: var(--fundo);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.linha__preco:active {
+  background: var(--dono-fundo);
+}
+
+.linha__ativo {
+  min-width: 44px;
+  min-height: 44px;
+  font-size: 19px;
+}
+
+/* --------------------------------------------------------- edição do preço */
+
+.editor {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+}
+
+.editor__campo {
+  width: 100%;
+  min-width: 0;
+  min-height: 44px;
+  padding: 0 12px;
+  border: 2px solid var(--dono);
+  border-radius: 10px;
+  background: var(--papel);
+  font-size: 18px;
+  font-weight: 700;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.editor__campo:focus {
+  outline: none;
+}
+
+.editor__ok,
+.editor__x {
+  min-width: 44px;
+  min-height: 44px;
+  border-radius: 10px;
+  font-size: 19px;
+  font-weight: 700;
+}
+
+.editor__ok {
+  background: var(--dono);
+  color: #fff;
+}
+
+.editor__x {
+  border: 1px solid var(--linha);
+  color: var(--tinta-fraca);
+}
+
+/* =================================================================== painéis */
+
+.painel {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  align-items: flex-end;
+}
+
+.painel__fundo {
+  position: absolute;
+  inset: 0;
+  background: rgb(43 32 40 / 45%);
+}
+
+.painel__folha {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: 100%;
+  max-height: 86vh;
+  padding: 20px 16px calc(20px + var(--seguro-baixo));
+  border-radius: 20px 20px 0 0;
+  background: var(--papel);
+  overflow-y: auto;
+}
+
+.painel__titulo {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 700;
+}
+
+.painel__folha p {
+  margin: 0;
+}
+
+#confirmar-texto {
+  font-size: 17px;
+  font-weight: 600;
+}
+
+#confirmar-sim {
+  background: var(--dono);
+}

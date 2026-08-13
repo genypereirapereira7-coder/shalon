@@ -451,8 +451,8 @@ Deixados de fora de propósito, com o ponto de extensão já mapeado:
 | 2 | PWA Vendas: cardápio, carrinho, envio | Pedido cai no banco pelo celular | ✅ |
 | 3 | Agente + impressão + reimpressão | **Sai papel na impressora** | ⬜ |
 | 4 | WebSocket + tela da cozinha com status | Pedido aparece na cozinha na hora | ⬜ |
-| 5 | PWA Dono: números ao vivo + editar preço | Preço muda no celular da loja na hora | ⬜ |
-| 6 | Fechamento do dia por item e total | O relatório bate com o caixa | ⬜ |
+| 5 | PWA Dono: números ao vivo + editar preço | Preço muda no celular da loja na hora | ✅ |
+| 6 | Fechamento do dia por item e total | O relatório bate com o caixa | ✅ |
 | 7 | Deploy, HTTPS, instalar os PWAs, backup | Rodando na sorveteria de verdade | ⬜ |
 
 A fase 3 é a de maior risco — é a única que depende de hardware físico. Até a impressora
@@ -483,6 +483,24 @@ tela, adicional pago com o preço no próprio botão e o total da unidade ao viv
 açaís com acompanhamentos diferentes são duas linhas do carrinho — somar num "2x" faria
 a cozinha montar os dois iguais. A tela só evita o erro; quem valida cota e preço é o
 servidor.
+
+PWA do Dono rodando em `frontend/dono/`, com as três telas da §2.3. Os números
+não são calculados no celular: total, ticket médio e ranking vêm prontos de
+`/relatorios/hoje`, em centavos, numa resposta só — três chamadas separadas
+dariam três chances de mostrar o total novo com o ranking velho.
+
+Cancelado sai do faturamento e é contado à parte; adicional pago entra no valor
+do item que o levou. O fechamento é imutável e vai com o total que estava na
+tela: se uma venda entrou entre a conferência e o toque no botão, o servidor
+recusa em vez de congelar um número que o dono não aprovou. Venda que sobe da
+fila offline depois disso entra marcada como `pos_fechamento` e aparece
+destacada — sem isso o dono compararia relatório e gaveta e acharia que faltou.
+
+**O "ao vivo" da tela Hoje ainda é polling de 15s**, não WebSocket. A fase 4
+troca `agendarAtualizacao()` pela assinatura de `metricas.tick` e o resto da
+tela não muda. Do mesmo jeito, o preço editado chega no balcão na próxima
+atualização de cardápio, não em menos de 1 segundo como promete a §2.3 — é o
+mesmo TODO de `preco.alterado` no WebSocket.
 
 Falta pra fase 3: a pasta `agente/`. Os endpoints que ela consome já existem e têm
 teste, então dá pra escrever o agente contra a `ImpressoraFake` sem esperar hardware.
