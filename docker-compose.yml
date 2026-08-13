@@ -1,0 +1,52 @@
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-shalon}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-shalon}
+      POSTGRES_DB: ${POSTGRES_DB:-shalon}
+      TZ: America/Sao_Paulo
+    volumes:
+      - dados_pg:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-shalon} -d ${POSTGRES_DB:-shalon}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  api:
+    build: ./backend
+    environment:
+      SHALON_DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-shalon}:${POSTGRES_PASSWORD:-shalon}@db:5432/${POSTGRES_DB:-shalon}
+      SHALON_JWT_SEGREDO: ${SHALON_JWT_SEGREDO:-dev-inseguro-troque-em-producao}
+      SHALON_AMBIENTE: ${SHALON_AMBIENTE:-dev}
+      TZ: America/Sao_Paulo
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backend:/app
+      - ./frontend:/frontend:ro
+
+  # Só em produção: `docker compose --profile prod up`
+  caddy:
+    image: caddy:2-alpine
+    profiles: ["prod"]
+    depends_on: [api]
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./frontend:/frontend:ro
+      - caddy_dados:/data
+      - caddy_config:/config
+
+volumes:
+  dados_pg:
+  caddy_dados:
+  caddy_config:

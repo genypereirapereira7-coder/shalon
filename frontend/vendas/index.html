@@ -1,0 +1,154 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1">
+<title>Shalon — Vendas</title>
+<meta name="theme-color" content="#e8618c">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icone-192.png">
+<link rel="apple-touch-icon" href="icone-192.png">
+<link rel="stylesheet" href="../comum/estilo.css">
+<link rel="stylesheet" href="vendas.css">
+</head>
+<body>
+
+<!-- ============================================================== LOGIN -->
+<section id="tela-login" class="login">
+  <h1 class="login__marca">Shalon</h1>
+
+  <div id="login-lista" class="login__caixa">
+    <p class="login__titulo">Quem está no caixa?</p>
+    <div id="usuarios" class="login__usuarios"></div>
+    <p id="login-carregando" class="fraco">Carregando…</p>
+    <button id="login-recarregar" class="botao botao--fantasma" hidden>Tentar de novo</button>
+  </div>
+
+  <div id="login-pin" class="login__caixa" hidden>
+    <button id="pin-voltar" class="login__voltar">‹ Trocar</button>
+    <p class="login__titulo"><span id="pin-nome"></span>, digite o PIN</p>
+
+    <input id="pin-campo" class="login__pin" type="password" inputmode="numeric"
+           autocomplete="off" maxlength="72" aria-label="PIN">
+
+    <div class="teclado">
+      <button class="teclado__t" data-digito="1">1</button>
+      <button class="teclado__t" data-digito="2">2</button>
+      <button class="teclado__t" data-digito="3">3</button>
+      <button class="teclado__t" data-digito="4">4</button>
+      <button class="teclado__t" data-digito="5">5</button>
+      <button class="teclado__t" data-digito="6">6</button>
+      <button class="teclado__t" data-digito="7">7</button>
+      <button class="teclado__t" data-digito="8">8</button>
+      <button class="teclado__t" data-digito="9">9</button>
+      <button class="teclado__t teclado__t--fraco" data-acao="letras" title="Usar teclado do celular">abc</button>
+      <button class="teclado__t" data-digito="0">0</button>
+      <button class="teclado__t teclado__t--fraco" data-acao="apagar" aria-label="Apagar">⌫</button>
+    </div>
+
+    <p id="login-erro" class="login__erro" hidden></p>
+    <button id="pin-entrar" class="botao login__entrar">ENTRAR</button>
+  </div>
+</section>
+
+<!-- ============================================================== VENDA -->
+<section id="tela-venda" class="venda" hidden>
+
+  <header class="topo">
+    <span class="topo__marca">Shalon</span>
+    <button id="btn-recentes" class="topo__acao" aria-label="Últimos pedidos">☰</button>
+    <button id="btn-usuario" class="topo__usuario">
+      <span class="ponto" id="ponto-conexao"></span>
+      <span id="nome-usuario"></span>
+      <span aria-hidden="true">▾</span>
+    </button>
+  </header>
+
+  <div id="faixa-fila" class="faixa faixa--atencao" hidden></div>
+  <div id="faixa-erro" class="faixa faixa--erro" hidden></div>
+
+  <nav id="categorias" class="categorias" aria-label="Categorias"></nav>
+
+  <main id="produtos" class="produtos"></main>
+
+  <!-- ------------------------------------------------------------ carrinho -->
+  <footer id="carrinho" class="carrinho" data-aberto="0">
+    <button id="carrinho-alca" class="carrinho__alca">
+      <span id="carrinho-resumo">Carrinho vazio</span>
+      <span id="carrinho-seta" aria-hidden="true">▴</span>
+    </button>
+
+    <div class="carrinho__corpo">
+      <ul id="carrinho-itens" class="itens"></ul>
+
+      <button id="btn-obs" class="carrinho__obs botao--fantasma">+ Observação</button>
+      <textarea id="obs" class="carrinho__obs-campo" rows="2" maxlength="280"
+                placeholder="Ex.: sem granulado" hidden></textarea>
+    </div>
+
+    <div class="carrinho__pe">
+      <div class="carrinho__total">
+        <span>TOTAL</span>
+        <strong id="total">R$ 0,00</strong>
+      </div>
+      <div class="carrinho__botoes">
+        <button id="btn-limpar" class="botao botao--fantasma" disabled>Limpar</button>
+        <button id="btn-enviar" class="botao carrinho__enviar" disabled>ENVIAR PARA A COZINHA</button>
+      </div>
+    </div>
+  </footer>
+</section>
+
+<!-- ======================================================== ACOMPANHAMENTOS -->
+<!-- Abre ao tocar num produto que tem escolhas (açaí, sundae, cestinha).
+     Produto sem grupo nenhum vai direto pro carrinho, sem esta folha. -->
+<div id="escolhas" class="painel" hidden>
+  <div class="painel__fundo" data-fechar-escolhas></div>
+
+  <div class="painel__folha escolhas">
+    <header class="escolhas__topo">
+      <div>
+        <p class="painel__titulo" id="escolhas-nome"></p>
+        <p class="fraco" id="escolhas-base"></p>
+      </div>
+      <button id="escolhas-cancelar" class="escolhas__x" aria-label="Cancelar">✕</button>
+    </header>
+
+    <div id="escolhas-grupos" class="escolhas__grupos"></div>
+
+    <div class="escolhas__pe">
+      <button id="escolhas-add" class="botao escolhas__add">
+        <span>ADICIONAR</span>
+        <strong id="escolhas-total">R$ 0,00</strong>
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- ============================================================= PAINÉIS -->
+<div id="painel" class="painel" hidden>
+  <div class="painel__fundo" data-fechar></div>
+
+  <div id="painel-usuario" class="painel__folha" hidden>
+    <p class="painel__titulo" id="painel-usuario-nome"></p>
+    <p class="fraco" id="painel-versao"></p>
+    <button id="btn-atualizar-cardapio" class="botao botao--fantasma">Atualizar cardápio</button>
+    <button id="btn-enviar-fila" class="botao botao--fantasma">Enviar fila agora</button>
+    <button id="btn-sair" class="botao botao--perigo">Sair</button>
+    <button class="botao botao--fantasma" data-fechar>Fechar</button>
+  </div>
+
+  <div id="painel-recentes" class="painel__folha" hidden>
+    <p class="painel__titulo">Últimos pedidos</p>
+    <ul id="lista-recentes" class="recentes"></ul>
+    <button class="botao botao--fantasma" data-fechar>Fechar</button>
+  </div>
+</div>
+
+<div id="aviso" class="aviso" role="status" aria-live="polite"></div>
+
+<script type="module" src="app.js"></script>
+</body>
+</html>

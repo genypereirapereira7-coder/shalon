@@ -1,0 +1,35 @@
+{
+  "name": "Shalon Vendas",
+  "short_name": "Vendas",
+  "description": "Balcão da sorveteria Shalon: monta o pedido e manda pra cozinha.",
+  "start_url": "./",
+  "scope": "./",
+  "id": "/vendas/",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#fff5f8",
+  "theme_color": "#e8618c",
+  "lang": "pt-BR",
+  "dir": "ltr",
+  "categories": ["business", "food"],
+  "icons": [
+    {
+      "src": "icone-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "icone-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "icone-mascara-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}

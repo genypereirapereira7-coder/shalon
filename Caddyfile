@@ -1,0 +1,49 @@
+# HTTPS automático (Let's Encrypt). Sem HTTPS o PWA não instala nem roda service worker.
+# Troque o domínio antes de subir.
+shalon.app.br {
+	encode gzip
+
+	# WebSocket e API vão pro FastAPI
+	@api path /ws /auth/* /cardapio* /produtos* /pedidos* /relatorios* /fechamento* /health /docs* /openapi.json
+	reverse_proxy @api api:8000
+
+	# O resto são os arquivos estáticos dos PWAs
+	handle_path /vendas/* {
+		root * /frontend/vendas
+		try_files {path} /index.html
+		file_server
+	}
+	handle_path /dono/* {
+		root * /frontend/dono
+		try_files {path} /index.html
+		file_server
+	}
+	handle_path /cozinha/* {
+		root * /frontend/cozinha
+		try_files {path} /index.html
+		file_server
+	}
+
+	# api.js, formato.js e o css que os três PWAs compartilham
+	handle_path /comum/* {
+		root * /frontend/comum
+		file_server
+	}
+
+	redir / /vendas/ permanent
+
+	# Sem a barra final o handle_path acima não pega, e o PWA abriria em 404.
+	redir /vendas /vendas/ permanent
+	redir /dono /dono/ permanent
+	redir /cozinha /cozinha/ permanent
+
+	header {
+		X-Content-Type-Options nosniff
+		X-Frame-Options DENY
+		Referrer-Policy same-origin
+	}
+
+	# Service worker nunca pode ficar em cache, senão o PWA congela numa versão velha
+	@sw path /vendas/sw.js /dono/sw.js
+	header @sw Cache-Control "no-cache, no-store, must-revalidate"
+}

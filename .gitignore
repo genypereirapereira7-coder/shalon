@@ -1,0 +1,15 @@
+.env
+# Banco de dev em SQLite, pra rodar sem subir o Postgres do compose.
+*.db
+*.pyc
+__pycache__/
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+dist/
+build/
+agente/config.ini
+agente/cupons_fake/
+.DS_Store

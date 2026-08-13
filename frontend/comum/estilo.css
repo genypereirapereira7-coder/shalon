@@ -1,0 +1,201 @@
+/*
+ * Base visual dos PWAs do Shalon.
+ *
+ * Duas regras guiam tudo aqui:
+ *   - Alvo de toque nunca abaixo de 48px. Quem usa isso está de mão molhada,
+ *     com fila na frente, olhando pro cliente e não pra tela.
+ *   - Contraste alto. O celular fica num balcão perto da janela, no sol.
+ */
+
+:root {
+  --rosa: #e8618c;
+  --rosa-claro: #f7d3e0;
+  --rosa-fundo: #fff5f8;
+  --roxo: #7a5a9c;
+  --tinta: #2b2028;
+  --tinta-fraca: #6f6270;
+  --linha: #e6dae0;
+  --papel: #ffffff;
+  --fundo: #f6f1f4;
+  --verde: #1c8c5a;
+  --amarelo: #b8730a;
+  --amarelo-fundo: #fff4d9;
+  --vermelho: #c62c46;
+  --vermelho-fundo: #ffe9ed;
+
+  --raio: 14px;
+  --sombra: 0 2px 8px rgb(43 32 40 / 12%);
+  --alvo: 52px;
+
+  /* Recorte da tela (notch, barra de gestos) — sem isso o botão ENVIAR fica
+     por baixo da barra do iPhone. */
+  --seguro-baixo: env(safe-area-inset-bottom, 0px);
+  --seguro-topo: env(safe-area-inset-top, 0px);
+}
+
+* {
+  box-sizing: border-box;
+  -webkit-tap-highlight-color: transparent;
+}
+
+html,
+body {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  background: var(--fundo);
+  color: var(--tinta);
+  font: 16px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  overscroll-behavior: none;
+  /* App de balcão: seleção de texto acidental só atrapalha. */
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+button {
+  font: inherit;
+  color: inherit;
+  border: 0;
+  background: none;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+input,
+textarea {
+  font: inherit;
+  color: inherit;
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+[hidden] {
+  display: none !important;
+}
+
+/* ------------------------------------------------------------- tipos comuns */
+
+.botao {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: var(--alvo);
+  padding: 0 20px;
+  border-radius: var(--raio);
+  background: var(--rosa);
+  color: #fff;
+  font-weight: 700;
+  transition: transform 80ms ease, filter 80ms ease;
+}
+
+.botao:active {
+  transform: scale(0.98);
+  filter: brightness(0.94);
+}
+
+.botao:disabled {
+  background: var(--linha);
+  color: var(--tinta-fraca);
+  cursor: default;
+  transform: none;
+}
+
+.botao--fantasma {
+  background: var(--papel);
+  color: var(--tinta);
+  border: 1px solid var(--linha);
+}
+
+.botao--perigo {
+  background: var(--vermelho);
+}
+
+.cartao {
+  background: var(--papel);
+  border-radius: var(--raio);
+  box-shadow: var(--sombra);
+}
+
+.fraco {
+  color: var(--tinta-fraca);
+}
+
+/* ------------------------------------------------------------------- avisos */
+
+.faixa {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 16px;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.faixa--atencao {
+  background: var(--amarelo-fundo);
+  color: var(--amarelo);
+}
+
+.faixa--erro {
+  background: var(--vermelho-fundo);
+  color: var(--vermelho);
+}
+
+/* Aviso flutuante de "deu certo" / "deu ruim". Some sozinho.
+   Fica no topo de propósito: embaixo ele cobriria o botão ENVIAR bem na hora
+   em que o funcionário vai apertar o próximo pedido. */
+.aviso {
+  position: fixed;
+  left: 50%;
+  top: calc(12px + var(--seguro-topo));
+  z-index: 60;
+  transform: translate(-50%, -12px);
+  max-width: min(92vw, 420px);
+  padding: 14px 20px;
+  border-radius: var(--raio);
+  background: var(--tinta);
+  color: #fff;
+  font-weight: 600;
+  text-align: center;
+  box-shadow: var(--sombra);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 160ms ease, transform 160ms ease;
+}
+
+.aviso[data-visivel="1"] {
+  opacity: 1;
+  transform: translate(-50%, 0);
+}
+
+.aviso[data-tipo="erro"] {
+  background: var(--vermelho);
+}
+
+.aviso[data-tipo="ok"] {
+  background: var(--verde);
+}
+
+/* ---------------------------------------------------------------- conexão */
+
+.ponto {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--verde);
+  flex: none;
+}
+
+.ponto[data-estado="offline"] {
+  background: var(--amarelo);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    transition: none !important;
+    animation: none !important;
+  }
+}

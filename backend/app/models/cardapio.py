@@ -1,0 +1,77 @@
+"""Categorias, produtos e auditoria de preço.
+
+Todo dinheiro é inteiro em centavos. Float em dinheiro gera erro de centavo
+no fechamento do dia.
+"""
+
+from datetime import datetime
+
+from sqlalchemy import (
+    Boolean,
+    CheckConstraint,
+    DateTime,
+    ForeignKey,
+    Integer,
+    String,
+)
+from sqlalchemy.orm import Mapped, mapped_column, relationship
+
+from app.models.base import Base, agora
+
+
+class Categoria(Base):
+    __tablename__ = "categoria"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    nome: Mapped[str] = mapped_column(String(60), nullable=False)
+    ordem: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    ativo: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+
+    produtos: Mapped[list["Produto"]] = relationship(
+        back_populates="categoria", order_by="Produto.ordem"
+    )
+
+
+class Produto(Base):
+    __tablename__ = "produto"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    categoria_id: Mapped[int] = mapped_column(ForeignKey("categoria.id"), nullable=False)
+    nome: Mapped[str] = mapped_column(String(80), nullable=False)
+    preco_centavos: Mapped[int] = mapped_column(Integer, nullable=False)
+    cor_botao: Mapped[str | None] = mapped_column(String(9))  # #RRGGBB
+    ordem: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    ativo: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    criado_em: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=agora
+    )
+    atualizado_em: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=agora, onupdate=agora
+    )
+
+    categoria: Mapped[Categoria] = relationship(back_populates="produtos")
+
+    __table_args__ = (
+        CheckConstraint("preco_centavos >= 0", name="preco_nao_negativo"),
+    )
+
+
+class PrecoHistorico(Base):
+    """Quem mudou o preço, quando, de quanto pra quanto.
+
+    Serve pra auditoria e — mais importante — pra reconstruir o preço que valia
+    num instante passado, quando um pedido sobe atrasado da fila offline.
+    """
+
+    __tablename__ = "preco_historico"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    produto_id: Mapped[int] = mapped_column(
+        ForeignKey("produto.id"), nullable=False, index=True
+    )
+    preco_antigo: Mapped[int] = mapped_column(Integer, nullable=False)
+    preco_novo: Mapped[int] = mapped_column(Integer, nullable=False)
+    usuario_id: Mapped[int] = mapped_column(ForeignKey("usuario.id"), nullable=False)
+    criado_em: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=agora, index=True
+    )
