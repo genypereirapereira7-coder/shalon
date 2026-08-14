@@ -217,7 +217,13 @@ CARDAPIO = [
 ]
 
 
-async def semear() -> None:
+async def semear(detalhado: bool = True) -> None:
+    """Popula usuários e cardápio. Idempotente.
+
+    `detalhado=False` lista só o resumo. É o que o `dev.py` usa: na primeira
+    execução são 138 registros, e a lista inteira empurraria pra fora da tela
+    justamente os links que aquele script existe pra mostrar.
+    """
     async with Sessao() as sessao:
         criados: list[str] = []
 
@@ -242,11 +248,12 @@ async def semear() -> None:
         linhas = [f"  {u.id:>3}  {u.papel.value:<12} {u.nome}" for u in usuarios]
 
     if criados:
-        print(f"Criados {len(criados)} registros:")
-        for item in criados:
-            print(f"  + {item}")
+        print(f"seed:    {len(criados)} registros criados")
+        if detalhado:
+            for item in criados:
+                print(f"  + {item}")
     else:
-        print("Nada a fazer — banco já semeado.")
+        print("seed:    nada a fazer, banco já semeado")
 
     print("\nUsuários:")
     print("   id  papel        nome")

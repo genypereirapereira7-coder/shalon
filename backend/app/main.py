@@ -1,5 +1,7 @@
 """Aplicação FastAPI."""
 
+import logging
+from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -13,13 +15,57 @@ from app.db import engine
 from app.rotas import auth, cardapio, pedidos, relatorios, ws
 from app.servicos.dia_operacional import dia_atual
 
+log = logging.getLogger("shalon")
+
 cfg = get_config()
+
+
+@asynccontextmanager
+async def ciclo_de_vida(_: FastAPI):
+    """Encosta no banco no arranque e grita se ele não responder.
+
+    Sem isto o servidor sobe feliz, serve as três telas e só falha quando
+    alguém aperta um botão — com uma parede de traceback do driver no terminal
+    e um "Erro 500" na cara de quem está no balcão. O caso comum em
+    desenvolvimento é ter esquecido as variáveis de ambiente e estar apontando
+    pro Postgres de produção, que não existe na máquina de ninguém.
+
+    Avisa, mas não derruba: em produção o banco é um container que pode subir
+    depois da API, e morrer no arranque transformaria uma espera de dois
+    segundos numa noite sem sistema.
+    """
+    try:
+        async with engine.connect() as conexao:
+            await conexao.execute(text("SELECT 1"))
+    except Exception as erro:
+        alvo = cfg.database_url.split("@")[-1]  # sem a senha
+        # Moldura em ASCII puro de propósito: o console do Windows costuma
+        # estar em cp1252 e transformaria caracteres de caixa em lixo. Este é
+        # justamente o aviso que precisa sobreviver ao pior terminal.
+        log.error(
+            "\n"
+            "  ============================================================\n"
+            "   O BANCO NAO RESPONDEU - as telas abrem, mas nada funciona\n"
+            "  ============================================================\n"
+            "   tentei: %s\n"
+            "   erro:   %s\n"
+            "\n"
+            "   Rodando na sua maquina? Use o atalho que ja cuida disso:\n"
+            "       cd backend && .venv/Scripts/python.exe dev.py\n"
+            "   Ele aponta pro SQLite, cria o banco e semeia o cardapio.\n"
+            "  ============================================================\n",
+            alvo,
+            erro,
+        )
+    yield
+
 
 app = FastAPI(
     title="Shalon",
     description="Sistema de pedidos da sorveteria Shalon",
     version="0.1.0",
     docs_url="/docs" if not cfg.producao else None,
+    lifespan=ciclo_de_vida,
 )
 
 app.add_middleware(
@@ -29,6 +75,24 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.middleware("http")
+async def nao_cachear_service_worker(requisicao, proxima):
+    """Service worker nunca em cache — a mesma regra que o Caddyfile aplica.
+
+    Em produção quem serve os PWAs é o Caddy, que já tem esta regra. Em
+    desenvolvimento é o `StaticFiles` daqui, que não tinha — e a diferença
+    custa caro: o navegador guarda o `sw.js` antigo, o service worker velho
+    continua no comando e serve o `app.js` do cache dele. O resultado é uma
+    tela que teima em rodar a versão anterior depois de qualquer alteração,
+    sem erro nenhum aparecendo, e um "não está funcionando" que não se explica
+    olhando o código.
+    """
+    resposta = await proxima(requisicao)
+    if requisicao.url.path.endswith("/sw.js"):
+        resposta.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+    return resposta
 
 app.include_router(auth.rotas)
 app.include_router(cardapio.rotas)

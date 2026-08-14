@@ -37,33 +37,35 @@ Postgres, igual à produção.
 
 ### A) Sem Docker — SQLite (mais rápido)
 
-Precisa de Python 3.12+.
+Precisa de Python 3.12+. São dois comandos:
 
 ```bash
 cd backend
 
-# 1. ambiente virtual + dependências
+# 1. ambiente virtual + dependências (só na primeira vez)
 python -m venv .venv
 .venv/Scripts/python.exe -m pip install -e ".[dev]"     # Windows
 # source .venv/bin/activate && pip install -e ".[dev]"  # Linux/macOS
 
-# 2. criar o schema no SQLite
-SHALON_DATABASE_URL="sqlite+aiosqlite:///_dev.db" \
-.venv/Scripts/python.exe -c "
-import asyncio
-from app.db import engine
-from app.models import Base
-async def m():
-    async with engine.begin() as c:
-        await c.run_sync(Base.metadata.create_all)
-asyncio.run(m())
-"
+# 2. subir
+.venv/Scripts/python.exe dev.py                          # Windows
+# .venv/bin/python dev.py                                # Linux/macOS
+```
 
-# 3. popular o cardápio e os usuários (idempotente)
-SHALON_DATABASE_URL="sqlite+aiosqlite:///_dev.db" \
-.venv/Scripts/python.exe -m app.seed
+O `dev.py` aponta pro SQLite, cria o banco se não existir, popula o cardápio e
+sobe o servidor com reload. No fim ele imprime os links das três telas.
 
-# 4. subir
+> **Não rode `uvicorn app.main:app` direto sem exportar as variáveis.** O padrão
+> do `config.py` é o Postgres de produção, então o servidor sobe, serve as três
+> telas e responde **500 em toda chamada de API** — a tela de vendas abre e não
+> carrega nada. Se acontecer, o arranque avisa em letras garrafais no terminal.
+
+Para escolher a porta ou expor na rede: `PORTA=9000 HOST=0.0.0.0 python dev.py`.
+
+<details>
+<summary>Rodar na mão, sem o <code>dev.py</code></summary>
+
+```bash
 SHALON_DATABASE_URL="sqlite+aiosqlite:///_dev.db" \
 SHALON_JWT_SEGREDO="dev-local-segredo-com-mais-de-32-bytes-ok" \
 .venv/Scripts/python.exe -m uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload
@@ -76,6 +78,23 @@ $env:SHALON_DATABASE_URL = "sqlite+aiosqlite:///_dev.db"
 $env:SHALON_JWT_SEGREDO  = "dev-local-segredo-com-mais-de-32-bytes-ok"
 .venv\Scripts\python.exe -m uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload
 ```
+
+O banco precisa existir antes: `python dev.py` cria, ou rode
+`python -m app.seed` com a mesma `SHALON_DATABASE_URL`.
+
+</details>
+
+### Se uma tela abrir e não funcionar
+
+Duas causas, nesta ordem:
+
+1. **A API está dando 500.** Abra http://127.0.0.1:8000/health — se disser
+   `"banco": "indisponivel"`, é o caso acima: suba pelo `dev.py`.
+2. **O navegador está preso numa versão antiga.** Os três PWAs instalam um
+   service worker que guarda a casca do app em cache. Depois de uma alteração,
+   force o descarte: F12 → Application → Service Workers → *Unregister*, e
+   recarregue com Ctrl+Shift+R. (Em produção o Caddy já impede esse cache; o
+   servidor de desenvolvimento passou a impedir também.)
 
 ### Ver papel sair (agente de impressão)
 
@@ -90,8 +109,8 @@ cp config.ini.exemplo config.ini     # já vem com tipo = fake
 # ../backend/.venv/bin/python main.py           # Linux/macOS
 ```
 
-O `usuario_id` no `config.ini` é o do usuário AGENTE, e o `python -m app.seed`
-imprime a tabela de ids no fim. Faça uma venda no PWA e a comanda aparece em
+O `usuario_id` no `config.ini` é o do usuário AGENTE — o `dev.py` imprime a
+tabela de ids no arranque. Faça uma venda no PWA e a comanda aparece em
 `agente/cupons.txt` — que é o "papel" da `ImpressoraFake`.
 
 Vale desligar o agente, vender duas vezes e religar: ele pergunta ao servidor o
