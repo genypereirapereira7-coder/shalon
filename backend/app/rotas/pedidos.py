@@ -9,6 +9,7 @@ from sqlalchemy import select
 from app.dependencias import IdentidadeDep, SessaoDep, SoAgente, SoCozinha, SoDono
 from app.models.base import agora
 from app.models.pedido import Pedido, StatusPedido
+from app.models.usuario import Papel
 from app.schemas.pedido import (
     CancelamentoEntrada,
     ItemSaida,
@@ -18,7 +19,9 @@ from app.schemas.pedido import (
     StatusEntrada,
 )
 from app.servicos import pedidos as servico
+from app.servicos import relatorios as relatorio
 from app.servicos.dia_operacional import dia_atual
+from app.servicos.eventos import Evento, hub, publicar_apos_commit
 
 rotas = APIRouter(prefix="/pedidos", tags=["pedidos"])
 
@@ -53,13 +56,19 @@ async def criar_pedido(
     if not criado:
         resposta.status_code = status.HTTP_200_OK
 
-    # TODO(fase 4): publicar `pedido.novo` no WebSocket (cozinha, agente, dono).
-    return _saida(
+    saida = _saida(
         pedido,
         duplicado=not criado,
         total_divergente=criado and servico.divergiu(pedido, dados.total_centavos),
     )
 
+    # Só o pedido novo é anunciado. O reenvio do mesmo `id_cliente` devolve o
+    # pedido que já existe — anunciar de novo faria o agente imprimir uma
+    # segunda comanda, que é exatamente o que a idempotência existe pra evitar.
+    if criado:
+        await _anunciar(sessao, Evento.PEDIDO_NOVO, saida, mexeu_no_caixa=True)
+
+    return saida
 
 @rotas.get("/hoje", response_model=list[PedidoSaida])
 async def pedidos_de_hoje(
@@ -112,7 +121,11 @@ async def marcar_impresso(pedido_id: uuid.UUID, sessao: SessaoDep, _: SoAgente):
     if pedido.impresso_em is None:
         pedido.impresso_em = agora()
         await sessao.flush()
-    # TODO(fase 4): publicar `pedido.impresso` pra tela da cozinha.
+        saida = _saida(pedido)
+        await _anunciar(sessao, Evento.PEDIDO_IMPRESSO, saida)
+        return saida
+
+    # Já estava impresso: o agente reenviou o ACK. Nada mudou, nada a anunciar.
     return _saida(pedido)
 
 
@@ -131,8 +144,14 @@ async def reimprimir(pedido_id: uuid.UUID, sessao: SessaoDep, _: SoCozinha):
 
     pedido.impresso_em = None
     await sessao.flush()
-    # TODO(fase 4): publicar `pedido.novo` pro agente imprimir na hora.
-    return _saida(pedido)
+
+    # `pedido.novo` e não um evento próprio: pro agente, "imprima este pedido"
+    # é a mesma ordem das duas vezes, e a §5 só lhe manda este evento. A tela
+    # da cozinha não apita de novo porque já conhece o número — quem distingue
+    # comanda nova de repetida é ela, não o servidor.
+    saida = _saida(pedido)
+    await _anunciar(sessao, Evento.PEDIDO_NOVO, saida)
+    return saida
 
 
 @rotas.patch("/{pedido_id}/status", response_model=PedidoSaida)
@@ -158,8 +177,12 @@ async def mudar_status(
 
     pedido.status = dados.status
     await sessao.flush()
-    # TODO(fase 4): publicar `pedido.status` (vendas, cozinha, dono).
-    return _saida(pedido)
+
+    # Sem `metricas.tick`: andar de RECEBIDO pra PRONTO não mexe em centavo
+    # nenhum, e o dono não precisa ver o total piscar por isso.
+    saida = _saida(pedido)
+    await _anunciar(sessao, Evento.PEDIDO_STATUS, saida)
+    return saida
 
 
 @rotas.post("/{pedido_id}/cancelar", response_model=PedidoSaida)
@@ -177,11 +200,53 @@ async def cancelar(
     pedido.cancelado_por = dono.usuario_id
     pedido.motivo_cancelamento = dados.motivo
     await sessao.flush()
-    # TODO(fase 4): publicar `pedido.status` pra tela da cozinha parar de produzir.
-    return _saida(pedido)
+
+    # Este mexe no caixa: cancelado sai do faturamento, então o total do dono
+    # muda junto.
+    saida = _saida(pedido)
+    await _anunciar(sessao, Evento.PEDIDO_STATUS, saida, mexeu_no_caixa=True)
+    return saida
 
 
 # ------------------------------------------------------------------ internos
+
+async def _anunciar(
+    sessao, evento: Evento, saida: PedidoSaida, *, mexeu_no_caixa: bool = False
+) -> None:
+    """Commita e avisa quem assina o evento.
+
+    Todos os `pedido.*` levam o `PedidoSaida` inteiro, e não o `{id, status}`
+    da §5. É mais bytes numa rede que é uma loja só, em troca de um formato só:
+    a tela da cozinha redesenha a comanda do mesmo jeito tenha ela nascido,
+    mudado de status ou saído na impressora, e o PWA de vendas — que não tem o
+    pedido em mãos — não precisa ir buscar o resto.
+    """
+    await publicar_apos_commit(sessao, evento, saida.model_dump(mode="json"))
+
+    if mexeu_no_caixa:
+        await _tick_do_dono(sessao)
+
+
+async def _tick_do_dono(sessao) -> None:
+    """`metricas.tick` com o resumo do dia **inteiro**, não só os três números.
+
+    A §5 previa um evento magro — total, nº de pedidos e ticket. Mandar só isso
+    obrigaria a tela do dono a pintar o total novo por cima do ranking velho,
+    que é exatamente o que o PWA dele foi escrito pra nunca fazer: os números
+    saem todos da mesma resposta justamente pra não existir um instante em que
+    a soma e o detalhe se contradizem. Mandando o resumo completo, a tela troca
+    tudo de uma vez.
+
+    A conta só é feita se houver dono conectado. O resumo são cinco consultas
+    agregadas, e rodá-las a cada venda pra ninguém seria pura queima de banco
+    num sábado de movimento.
+    """
+    if hub.conectados(Papel.DONO) == 0:
+        return
+
+    resumo = await relatorio.resumo(sessao, dia_atual())
+    await hub.publicar(Evento.METRICAS_TICK, resumo.model_dump(mode="json"))
+
 
 async def _buscar(sessao, pedido_id: uuid.UUID) -> Pedido:
     pedido = await sessao.get(Pedido, pedido_id)

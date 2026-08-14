@@ -1,0 +1,50 @@
+# Configuração do agente de impressão.
+# Copie para `config.ini` e ajuste. Este arquivo fica no PC da cozinha.
+
+[servidor]
+# Em produção: https://shalon.app.br
+url = http://127.0.0.1:8000
+
+# O id do usuário AGENTE no banco. Ele aparece no fim do `python -m app.seed`.
+usuario_id = 4
+pin = 0000
+
+
+[impressora]
+# fake | escpos_usb | escpos_rede | spooler_windows
+tipo = fake
+
+# --- tipo = fake ---------------------------------------------------------
+# O "papel" vira este arquivo de texto. É assim que dá pra rodar o fluxo
+# inteiro sem ter comprado impressora nenhuma.
+arquivo = cupons.txt
+
+# --- tipo = escpos_usb (o caminho principal, ver §3) ---------------------
+# Aceita 0x0416 ou 1046. No Windows: Gerenciador de Dispositivos →
+# a impressora → Detalhes → IDs de hardware → USB\VID_0416&PID_5011
+# vendor_id = 0x0416
+# product_id = 0x5011
+# perfil = TM-T20II
+
+# --- tipo = escpos_rede --------------------------------------------------
+# Exige IP fixo (ou reserva no DHCP): com IP dinâmico o endereço muda numa
+# queda de luz e as comandas param de sair sem ninguém entender por quê.
+# host = 192.168.0.50
+# porta = 9100
+
+# --- tipo = spooler_windows ---------------------------------------------
+# Vazio = impressora padrão do Windows.
+# nome = EPSON TM-T20X Receipt
+
+
+[loja]
+fuso = America/Sao_Paulo
+# 48 = 80mm em Font A. Não use 58mm: o cupom fica ilegível (§3).
+largura = 48
+
+
+[cozinha]
+# Abrir a tela da cozinha no navegador quando o agente subir.
+abrir = nao
+# Vazio = navegador padrão. Ex.: windows-default, chrome
+navegador =

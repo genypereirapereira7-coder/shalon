@@ -12,6 +12,7 @@
 
 import * as api from "../comum/api.js";
 import { reais, valor, hora, plural } from "../comum/formato.js";
+import * as ws from "../comum/ws.js";
 import * as fila from "./fila.js";
 
 const CHAVE_CARDAPIO = "shalon.cardapio";
@@ -37,6 +38,8 @@ const estado = {
   /** false depois de uma falha de rede; o pontinho do topo vive disto */
   online: navigator.onLine,
   saidaConfirmada: false,
+  /** Conexão do WebSocket, quando existe. */
+  socket: null,
 };
 
 const $ = (id) => document.getElementById(id);
@@ -181,6 +184,34 @@ async function abrirVenda() {
   // tela já dizem que deu certo. O toque em "Atualizar cardápio" é que fala.
   baixarCardapio({ silencioso: true });
   sincronizar();
+  ligarSocket();
+}
+
+// ================================================================ tempo real
+
+/**
+ * O socket serve a uma coisa só aqui: preço editado pelo dono chegar no balcão
+ * antes da próxima venda (§2.3 promete menos de 1 segundo).
+ *
+ * A venda em si **não** passa por ele. Quem garante que o pedido sobe é a fila
+ * do IndexedDB, que funciona com a internet fora — e um caminho que só funciona
+ * com o socket de pé seria um caminho a menos de confiança, não a mais.
+ */
+function ligarSocket() {
+  estado.socket?.fechar();
+  estado.socket = ws.conectar({
+    aoEvento: (evento) => {
+      if (evento !== "preco.alterado") return;
+
+      // Não no meio de uma montagem: o `aplicarCardapio` remonta o mapa de
+      // opções e redesenha a grade, e a folha de acompanhamentos aberta ficaria
+      // apontando pra um produto que não existe mais. O preço novo entra assim
+      // que o funcionário fechar a folha, pela sincronia de sempre.
+      if (estado.escolha) return;
+
+      baixarCardapio({ silencioso: true });
+    },
+  });
 }
 
 async function baixarCardapio({ silencioso = false } = {}) {
@@ -750,6 +781,11 @@ async function sair() {
     aviso(`${plural(pendentes, "pedido ainda não subiu", "pedidos ainda não subiram")} — aperte de novo pra sair mesmo assim`, "erro");
     return;
   }
+
+  // Antes do `api.sair()`: o socket ainda vai tentar reconectar com o token
+  // que está prestes a ser apagado, e ficaria batendo na porta à toa.
+  estado.socket?.fechar();
+  estado.socket = null;
 
   await api.sair();
   estado.carrinho.clear();

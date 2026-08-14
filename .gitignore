@@ -10,6 +10,11 @@ venv/
 *.egg-info/
 dist/
 build/
+# O config.ini do agente leva o PIN da conta de máquina em texto plano.
+# O que vai pro repositório é o config.ini.exemplo.
 agente/config.ini
 agente/cupons_fake/
+# "Papel" da ImpressoraFake.
+agente/cupons.txt
+agente/*.spec.bak
 .DS_Store

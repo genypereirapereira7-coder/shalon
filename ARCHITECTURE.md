@@ -247,18 +247,49 @@ POST   /fechamento                  fecha o caixa do dia             [DONO]
 ### WebSocket
 
 Um endpoint só, `/ws`, com o papel vindo do JWT. O servidor mantém as conexões em
-memória agrupadas por papel e faz o roteamento:
+memória agrupadas por papel (`app/servicos/eventos.py`) e faz o roteamento:
 
 | Evento | Servidor → quem | Conteúdo |
 |---|---|---|
 | `pedido.novo` | cozinha, agente, dono | pedido completo |
-| `pedido.status` | vendas, cozinha, dono | id, status novo |
-| `pedido.impresso` | cozinha | id, hora |
-| `pedido.falha_impressao` | cozinha, dono | id, erro |
-| `preco.alterado` | vendas, cozinha | produto, preço novo |
-| `metricas.tick` | dono | total do dia, nº pedidos, ticket médio |
+| `pedido.status` | vendas, cozinha, dono | pedido completo |
+| `pedido.impresso` | cozinha, dono | pedido completo |
+| `preco.alterado` | vendas, cozinha, dono | produto completo |
+| `metricas.tick` | dono | o resumo do dia inteiro |
+| `impressora.status` | cozinha, dono | ok, detalhe |
 
-E do agente para o servidor: `ack.impresso`, `impressora.status`.
+E do agente/telas para o servidor: `auth` (obrigatória, a primeira), `ping` e
+`impressora.status`.
+
+**A autenticação é a primeira mensagem, não a URL.** O navegador não deixa pôr
+cabeçalho `Authorization` num WebSocket, e o caminho comum — `/ws?token=…` —
+gravaria o token de acesso no log de requisições do Caddy e no histórico do
+navegador. O servidor aceita a conexão, espera `{"tipo":"auth","token":"…"}` por
+5s e fecha se não vier.
+
+Três diferenças em relação ao que esta seção previa, cada uma por um motivo:
+
+- **`pedido.*` leva o pedido inteiro**, não `{id, status}`. É mais bytes numa
+  rede que é uma loja só, em troca de um formato só: a tela da cozinha redesenha
+  a comanda do mesmo jeito tenha ela nascido, mudado de status ou saído na
+  impressora.
+- **`metricas.tick` leva o resumo completo**, não os três números do topo. O PWA
+  do dono foi escrito pra nunca mostrar o total novo com o ranking velho; um
+  evento magro o obrigaria justamente a isso. O resumo só é calculado se houver
+  dono conectado.
+- **`ack.impresso` não existe: o ACK continua sendo REST** (`POST
+  /pedidos/{id}/impresso`). A rota já é idempotente e o agente precisa dela de
+  qualquer jeito pro caso do socket estar fora do ar — dois caminhos de escrita
+  pro mesmo campo seria uma cópia a mais pra manter sem nada em troca. E
+  `pedido.falha_impressao` virou `impressora.status`: o que a cozinha precisa
+  saber não é que *uma* comanda falhou (o prazo de 15s já diz isso), é que
+  *nenhuma* vai sair até alguém olhar a impressora.
+
+**O socket acelera; quem garante é o polling.** Nenhuma das três telas nem o
+agente dependem dele pra estarem corretos: todos continuam com a sua varredura
+periódica, e o WebSocket só encurta a espera pra menos de um segundo. Se ele
+nunca conectar, o sistema inteiro funciona mais devagar — e ninguém fica sem
+saber de um pedido.
 
 ---
 
@@ -352,12 +383,11 @@ shalon/
 │   │   │   ├── pedidos.py
 │   │   │   ├── relatorios.py
 │   │   │   └── ws.py
-│   │   ├── servicos/
-│   │   │   ├── pedidos.py          # numeração, idempotência, total
-│   │   │   ├── relatorios.py
-│   │   │   └── dia_operacional.py
-│   │   └── realtime/
-│   │       └── gerenciador.py      # conexões WS por papel
+│   │   └── servicos/
+│   │       ├── pedidos.py          # numeração, idempotência, total
+│   │       ├── relatorios.py
+│   │       ├── dia_operacional.py
+│   │       └── eventos.py          # hub do WS: conexões por papel
 │   ├── alembic/
 │   ├── tests/
 │   └── pyproject.toml
@@ -372,10 +402,12 @@ shalon/
 │   ├── dono/                       # PWA do dono
 │   │   └── (mesma estrutura)
 │   ├── cozinha/                    # tela do PC da cozinha
-│   └── comum/                      # api.js, ws.js, css
+│   └── comum/                      # api.js, ws.js, relogio.js, css
 │
 ├── agente/
-│   ├── main.py                     # loop WebSocket
+│   ├── main.py                     # laço: WebSocket + varredura + fila
+│   ├── api.py                      # cliente REST (login, ACK, não-impressos)
+│   ├── config.py                   # leitura do config.ini
 │   ├── impressoras/
 │   │   ├── base.py                 # Protocol Impressora
 │   │   ├── escpos_usb.py
@@ -383,7 +415,8 @@ shalon/
 │   │   ├── spooler_windows.py
 │   │   └── fake.py
 │   ├── cupom.py                    # formatação do papel
-│   ├── config.ini
+│   ├── tests/
+│   ├── config.ini.exemplo          # o config.ini real fica fora do git (PIN)
 │   └── build.spec                  # PyInstaller → shalon-agente.exe
 │
 ├── docker-compose.yml
@@ -449,22 +482,26 @@ Deixados de fora de propósito, com o ponto de extensão já mapeado:
 | 0 | Docker Compose, Postgres, FastAPI de pé, migrations | `/health` responde | ✅ |
 | 1 | Modelos, cardápio (com acompanhamentos), login por PIN | Cardápio impresso inteiro no banco | ✅ |
 | 2 | PWA Vendas: cardápio, carrinho, envio | Pedido cai no banco pelo celular | ✅ |
-| 3 | Agente + impressão + reimpressão | **Sai papel na impressora** | ⬜ |
-| 4 | WebSocket + tela da cozinha com status | Pedido aparece na cozinha na hora | 🟡 |
+| 3 | Agente + impressão + reimpressão | **Sai papel na impressora** | ✅* |
+| 4 | WebSocket + tela da cozinha com status | Pedido aparece na cozinha na hora | ✅ |
 | 5 | PWA Dono: números ao vivo + editar preço | Preço muda no celular da loja na hora | ✅ |
 | 6 | Fechamento do dia por item e total | O relatório bate com o caixa | ✅ |
 | 7 | Deploy, HTTPS, instalar os PWAs, backup | Rodando na sorveteria de verdade | ⬜ |
 
-A fase 3 é a de maior risco — é a única que depende de hardware físico. Até a impressora
-chegar, uso a `ImpressoraFake` (escreve o cupom num arquivo de texto) e todo o resto é
-construído normalmente.
+**\*** A fase 3 leva asterisco porque é a única que depende de hardware físico, e a
+impressora ainda não foi comprada. O agente está escrito, testado e roda o fluxo
+inteiro da §6 de ponta a ponta contra a `ImpressoraFake` — venda no celular,
+evento no socket, cupom formatado, ACK de volta, reimpressão marcada, e a
+varredura recuperando o que ficou pra trás enquanto ele esteve desligado. O
+único trecho que nunca foi exercitado é o cabo: `EscPosUSB`, `EscPosRede` e
+`SpoolerWindows` estão implementados e não têm como ser testados sem a máquina
+na frente. Trocar a `fake` por uma delas é uma linha no `config.ini`.
 
-A fase 4 está 🟡 e não ✅ porque só a metade visível ficou pronta: a tela da cozinha
-existe e funciona, mas atualiza por polling. O `/ws` é o que falta.
+Só a fase 7 continua aberta.
 
 ### O que já está de pé
 
-Backend com 96 testes passando: login por PIN com trava de força bruta e refresh
+Backend com 128 testes passando, mais 15 do agente: login por PIN com trava de força bruta e refresh
 rotativo, cardápio com auditoria de preço, e a API de pedidos inteira — criação
 idempotente por `id_cliente`, numeração atômica do dia, snapshot de preço, fila de
 impressão (`/pedidos/nao-impressos`, `/pedidos/{id}/impresso`, `/reimprimir`), ciclo
@@ -517,12 +554,26 @@ futuro e o alerta de impressora travada nunca acende. Como o Postgres devolve
 datetime com fuso e o SQLite sem, esse descuido só aparece em dev, onde é fácil
 culpar "coisa do SQLite" e seguir.
 
-**O "ao vivo" ainda é polling em todas as telas**, não WebSocket: 15s na tela
-Hoje do dono, 5s na cozinha. A fase 4 troca `agendarAtualizacao()` e `agendar()`
-pelas assinaturas de `metricas.tick` e `pedido.novo`/`pedido.status`, e o resto
-das telas não muda. Do mesmo jeito, o preço editado chega no balcão na próxima
-atualização de cardápio, não em menos de 1 segundo como promete a §2.3 — é o
-mesmo TODO de `preco.alterado` no WebSocket.
+Agente de impressão rodando em `agente/`. É o único pedaço que toca hardware, e
+o laço dele tem duas fontes pro mesmo trabalho de propósito: o `pedido.novo` do
+WebSocket dá o papel em menos de um segundo, e uma varredura de
+`/pedidos/nao-impressos` a cada 30s é o que garante que nenhuma comanda se perca
+quando o Wi-Fi cai, o socket morre sem avisar ou a bobina acaba. Só confirma
+depois que imprimiu — confirmar antes transformaria impressora travada em
+comanda que ninguém vai buscar. E erra pro lado de imprimir duas vezes: se cair
+entre o papel e o ACK, a comanda sai de novo marcada como REIMPRESSÃO, porque o
+erro oposto é o cliente esperando no balcão.
 
-Falta pra fase 3: a pasta `agente/`. Os endpoints que ela consome já existem e têm
-teste, então dá pra escrever o agente contra a `ImpressoraFake` sem esperar hardware.
+O WebSocket está de pé e as três telas assinam. A comanda aparece na cozinha e
+o total sobe no celular do dono na hora, e o preço editado chega no balcão em
+menos de 1 segundo como a §2.3 promete. **Mas o polling continua ligado em
+todas elas** — só mais espaçado (20s na cozinha, 60s no dono) enquanto o socket
+está de pé, voltando ao ritmo curto quando ele cai. Nenhuma tela depende do
+socket pra estar correta; ele só encurta a espera.
+
+Uma correção que veio junto: a tela da cozinha comparava `criado_em` do servidor
+com o `Date.now()` do PC pra decidir se a impressora travou. Um PC de cozinha
+pode ficar meses sem sincronizar o relógio, e uns poucos minutos de desvio
+acendem o alerta vermelho em todas as comandas ou em nenhuma. Agora os dois
+lados da conta saem do mesmo relógio (`frontend/comum/relogio.js`), acertado
+pelo `/health` e pelo `pronto` do socket.

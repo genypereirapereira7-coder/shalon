@@ -12,16 +12,22 @@
  *    continuam, com um aviso de que a lista parou de atualizar (§7). Sumir com
  *    o pedido de alguém é pior do que mostrá-lo desatualizado.
  *
- * Como o WebSocket é a fase 4, a atualização é polling curto. Quando o `/ws`
- * existir, `agendar()` vira a assinatura de `pedido.novo` e `pedido.status`, e
- * o resto do arquivo não muda.
+ * A comanda chega pelo WebSocket em menos de um segundo, mas **a tela não
+ * depende dele**: o polling continua ligado por baixo e é ele que garante que
+ * nada se perca quando o socket cair. Com o socket de pé o intervalo relaxa;
+ * sem ele, aperta. É o mesmo desenho do agente de impressão (§7).
  */
 
 import * as api from "../comum/api.js";
 import { hora } from "../comum/formato.js";
+import * as relogio from "../comum/relogio.js";
+import * as ws from "../comum/ws.js";
 
-/** Curto de propósito: aqui o atraso é comanda parada na fila. */
+/** Sem WebSocket, o polling é a única fonte: aqui o atraso é comanda parada. */
 const INTERVALO_MS = 5000;
+
+/** Com o socket de pé o polling vira só rede de segurança. */
+const INTERVALO_COM_SOCKET_MS = 20000;
 
 /** Sem ACK do agente depois disso, a impressora provavelmente travou (§6). */
 const PRAZO_IMPRESSAO_MS = 15000;
@@ -51,6 +57,8 @@ const estado = {
   carregando: false,
   /** Ids com uma ação em voo, pra não mandar dois PATCH no mesmo toque. */
   ocupados: new Set(),
+  /** Conexão do WebSocket, quando existe. */
+  socket: null,
 };
 
 const $ = (id) => document.getElementById(id);
@@ -62,6 +70,11 @@ let timerRelogio = null;
 async function iniciar() {
   registrarServiceWorker();
   ligarEventos();
+
+  // Antes de qualquer comanda aparecer: o alerta de impressora travada compara
+  // "agora" com a hora do servidor, e o PC da cozinha pode estar meses sem
+  // sincronizar o relógio.
+  await relogio.sincronizar();
 
   api.aoPerderSessao(() => {
     aviso("Sessão expirada — entre de novo", "erro");
@@ -196,12 +209,14 @@ async function abrirCozinha() {
   await carregar({ silencioso: true });
 
   agendar();
+  ligarSocket();
   tiquetaque();
 }
 
-function agendar() {
-  parar();
-  timer = setInterval(carregar, INTERVALO_MS);
+function agendar(intervalo = INTERVALO_MS) {
+  clearInterval(timer);
+  clearInterval(timerRelogio);
+  timer = setInterval(carregar, intervalo);
 
   // O relógio do topo e os minutos de espera de cada comanda andam sozinhos,
   // sem esperar a próxima ida ao servidor.
@@ -212,6 +227,85 @@ function parar() {
   clearInterval(timer);
   clearInterval(timerRelogio);
   timer = timerRelogio = null;
+  estado.socket?.fechar();
+  estado.socket = null;
+}
+
+// ================================================================ tempo real
+
+function ligarSocket() {
+  estado.socket?.fechar();
+  estado.socket = ws.conectar({
+    aoEvento: aplicarEvento,
+    aoMudarConexao: (ligado) => {
+      // O polling não é desligado nunca — só relaxa. É ele que traz de volta o
+      // que o socket deixou passar num tombo curto de rede.
+      agendar(ligado ? INTERVALO_COM_SOCKET_MS : INTERVALO_MS);
+      if (ligado) carregar({ silencioso: true });
+    },
+  });
+}
+
+function aplicarEvento(evento, dados) {
+  if (evento === "impressora.status") return avisarImpressora(dados);
+
+  if (!["pedido.novo", "pedido.status", "pedido.impresso"].includes(evento)) return;
+
+  // Vendo os entregues, a lista é outra consulta: deixa o polling cuidar em
+  // vez de injetar comanda em produção numa tela que não é a da produção.
+  if (estado.vendoEntregues) return;
+
+  aplicarPedido(dados, { apitar: evento === "pedido.novo" });
+}
+
+/**
+ * Encaixa um pedido que chegou pelo socket no que já está na tela.
+ *
+ * Trabalha sobre a lista local em vez de recarregar do servidor: o `carregar`
+ * redesenha tudo e, numa cozinha com doze comandas, apagar e remontar a tela a
+ * cada mudança de status faz o dedo errar o botão.
+ */
+function aplicarPedido(pedido, { apitar: podeApitar = false } = {}) {
+  if (!pedido?.id) return;
+
+  const conhecido = estado.conhecidos.has(pedido.id);
+  estado.conhecidos.add(pedido.id);
+
+  const indice = estado.pedidos.findIndex((p) => p.id === pedido.id);
+  const emProducao = EM_PRODUCAO.includes(pedido.status);
+
+  if (!emProducao) {
+    // Entregue ou cancelado: sai da tela de produção.
+    if (indice === -1) return;
+    estado.pedidos.splice(indice, 1);
+  } else if (indice === -1) {
+    estado.pedidos.push(pedido);
+    // A cozinha produz na ordem da venda, não na de chegada do evento.
+    estado.pedidos.sort((a, b) => a.numero_dia - b.numero_dia);
+  } else {
+    estado.pedidos[indice] = pedido;
+  }
+
+  desenhar();
+
+  if (podeApitar && !conhecido && emProducao) {
+    apitar();
+    aviso(`Comanda #${pedido.numero_dia}`, "ok");
+  }
+}
+
+/** A impressora avisou que travou (ou que voltou). Quem manda isso é o agente. */
+function avisarImpressora(dados) {
+  const faixa = $("faixa-impressora");
+  if (dados?.ok) {
+    faixa.hidden = true;
+    return;
+  }
+  faixa.textContent =
+    "⚠ A impressora não está respondendo" +
+    (dados?.detalhe ? ` (${dados.detalhe})` : "") +
+    " — as comandas continuam aparecendo aqui na tela.";
+  faixa.hidden = false;
 }
 
 async function carregar({ silencioso = false } = {}) {
@@ -343,11 +437,14 @@ function cartao(pedido) {
  * O prazo conta do `criado_em` do servidor, não do relógio do celular que
  * vendeu: uma comanda que ficou na fila offline chega com `criado_em_cliente`
  * de meia hora atrás e apareceria atrasada sem nunca ter ido pra impressora.
+ *
+ * E o "agora" também é o do servidor (`relogio`), não o deste PC: os dois lados
+ * da conta precisam sair do mesmo relógio. Um PC de cozinha meses sem
+ * sincronizar acenderia o alerta em todas as comandas ou em nenhuma.
  */
 function situacaoImpressao(pedido) {
   if (pedido.impresso_em) return "ok";
-  const idade = Date.now() - new Date(pedido.criado_em).getTime();
-  return idade > PRAZO_IMPRESSAO_MS ? "atrasada" : "esperando";
+  return relogio.desde(pedido.criado_em) > PRAZO_IMPRESSAO_MS ? "atrasada" : "esperando";
 }
 
 function rodape(pedido) {
@@ -455,7 +552,7 @@ function tiquetaque() {
   });
 
   for (const el of document.querySelectorAll(".comanda__espera")) {
-    const minutos = Math.floor((Date.now() - new Date(el.dataset.desde).getTime()) / 60000);
+    const minutos = Math.floor(relogio.desde(el.dataset.desde) / 60000);
     el.textContent = minutos < 1 ? "agora" : `há ${minutos} min`;
     el.dataset.atrasada = minutos >= ESPERA_LONGA_MIN ? "1" : "0";
   }

@@ -10,7 +10,7 @@ from sqlalchemy import text
 
 from app.config import get_config
 from app.db import engine
-from app.rotas import auth, cardapio, pedidos, relatorios
+from app.rotas import auth, cardapio, pedidos, relatorios, ws
 from app.servicos.dia_operacional import dia_atual
 
 cfg = get_config()
@@ -34,6 +34,7 @@ app.include_router(auth.rotas)
 app.include_router(cardapio.rotas)
 app.include_router(pedidos.rotas)
 app.include_router(relatorios.rotas)
+app.include_router(ws.rotas)
 
 
 @app.get("/health", tags=["infra"])

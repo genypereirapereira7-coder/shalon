@@ -245,6 +245,12 @@ body {
   color: #ff9aa8;
 }
 
+/* A paleta do `comum/` é clara demais pro monitor escuro da cozinha. */
+.faixa--atencao {
+  background: #3a2f14;
+  color: #ffd479;
+}
+
 /* ================================================================== comandas */
 
 .comandas {

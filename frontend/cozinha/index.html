@@ -67,6 +67,11 @@
 
   <div id="faixa-conexao" class="faixa faixa--erro" hidden></div>
 
+  <!-- Quem acende esta é o agente de impressão, pelo WebSocket. É diferente do
+       alerta vermelho de cada comanda: aquele diz "esta não saiu", esta diz
+       "nenhuma vai sair até alguém olhar a impressora". -->
+  <div id="faixa-impressora" class="faixa faixa--atencao" hidden></div>
+
   <main id="comandas" class="comandas"></main>
 
   <p id="vazio" class="vazio" hidden>

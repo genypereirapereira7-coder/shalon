@@ -17,6 +17,7 @@ from app.schemas.cardapio import (
     ProdutoPatch,
     ProdutoSaida,
 )
+from app.servicos.eventos import Evento, publicar_apos_commit
 from app.servicos.precos import registrar_mudanca
 
 rotas = APIRouter(tags=["cardapio"])
@@ -129,5 +130,9 @@ async def editar_produto(produto_id: int, dados: ProdutoPatch, sessao: SessaoDep
         setattr(produto, campo, valor)
 
     await sessao.flush()
-    # TODO(fase 5): publicar `preco.alterado` no WebSocket pra vendas e cozinha.
-    return ProdutoSaida.model_validate(produto)
+
+    # O evento leva o produto inteiro, não só o preço: desativar um item também
+    # precisa sumir do balcão na hora, e é o mesmo PATCH que faz as duas coisas.
+    saida = ProdutoSaida.model_validate(produto)
+    await publicar_apos_commit(sessao, Evento.PRECO_ALTERADO, saida.model_dump(mode="json"))
+    return saida

@@ -1,6 +1,6 @@
-from datetime import datetime
-
 from pydantic import BaseModel, Field
+
+from app.schemas.tipos import Utc
 
 
 class OpcaoSaida(BaseModel):
@@ -55,7 +55,11 @@ class CardapioSaida(BaseModel):
     guardado pra saber se precisa baixar de novo.
     """
 
-    versao: datetime | None
+    # `Utc` e não `datetime`: os dois PWAs mostram isto como
+    # "Cardápio de 12/08/2026 19:42" no painel. Sem o fuso no JSON o navegador
+    # lê a hora UTC como local e o dono vê o cardápio datado três horas no
+    # futuro. Ver `app/schemas/tipos.py`.
+    versao: Utc | None
     categorias: list[CategoriaSaida]
 
 

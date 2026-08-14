@@ -1,0 +1,38 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "shalon-agente"
+version = "0.1.0"
+description = "Agente de impressão da sorveteria Shalon (roda no PC da cozinha)"
+requires-python = ">=3.12"
+dependencies = [
+    "httpx>=0.28",
+    "websockets>=13",
+]
+
+[project.optional-dependencies]
+# A térmica não é obrigatória pra rodar: com `tipo = fake` o agente escreve o
+# cupom num .txt e o fluxo inteiro funciona sem hardware nenhum (§3).
+termica = ["python-escpos>=3.1"]
+# Só no Windows, e só pra `tipo = spooler_windows`.
+windows = ["pywin32>=306"]
+empacotar = ["pyinstaller>=6.11"]
+
+[tool.setuptools]
+# Módulos soltos: o agente é um programa, não uma biblioteca. O `main.py` roda
+# direto da pasta e é isso que o PyInstaller empacota.
+py-modules = ["main", "api", "config", "cupom"]
+packages = ["impressoras"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+# O agente é um programa de módulos soltos, não um pacote instalado: sem isto
+# o `import cupom` do teste não acha nada.
+pythonpath = ["."]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"

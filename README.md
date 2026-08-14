@@ -12,20 +12,23 @@ celular do caixa. A arquitetura, as decisões e o que ainda falta estão em
 | PWA de vendas (`frontend/vendas/`) | funcionando |
 | PWA do dono (`frontend/dono/`) | funcionando |
 | PWA da cozinha (`frontend/cozinha/`) | funcionando |
-| Agente de impressão | não implementado |
+| WebSocket (`/ws`) | funcionando |
+| Agente de impressão (`agente/`) | funcionando, sem impressora de verdade |
 
 O `backend/app/main.py` já monta as três pastas de PWA; as que não existem são
 simplesmente ignoradas na subida.
 
-As telas atualizam por polling: 15s nos números do dono, 5s nas comandas da
-cozinha. O WebSocket (`metricas.tick`, `pedido.novo`, `preco.alterado`) é o que
-falta da fase 4 — até lá, o preço editado chega no celular da loja na próxima
-atualização de cardápio, não instantaneamente.
+A comanda aparece na cozinha e o total sobe no celular do dono em menos de um
+segundo, pelo WebSocket. **O polling continua ligado por baixo em todas as
+telas**, só mais espaçado — nenhuma delas depende do socket pra estar correta,
+e se ele nunca conectar tudo funciona mais devagar em vez de quebrar.
 
-A tela da cozinha acusa impressora travada (comanda sem confirmação de impressão
-em 15s pulsa em vermelho, com botão de reimprimir), mas quem imprime de verdade
-é o agente da fase 3, que ainda não existe. Sem ele, toda comanda vai acender o
-alerta.
+O agente de impressão está escrito e testado, mas a impressora ainda não foi
+comprada. Ele vem configurado com `tipo = fake`, que grava o cupom num
+`cupons.txt` em vez de mandar pra bobina — dá pra ver o fluxo inteiro
+funcionando sem hardware nenhum. Os drivers de térmica USB, de rede e do
+spooler do Windows estão implementados e são uma linha no `config.ini`, mas
+nunca foram testados contra máquina de verdade.
 
 ## Rodar localmente
 
@@ -73,6 +76,27 @@ $env:SHALON_DATABASE_URL = "sqlite+aiosqlite:///_dev.db"
 $env:SHALON_JWT_SEGREDO  = "dev-local-segredo-com-mais-de-32-bytes-ok"
 .venv\Scripts\python.exe -m uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload
 ```
+
+### Ver papel sair (agente de impressão)
+
+Com o servidor no ar, noutro terminal:
+
+```bash
+cd agente
+cp config.ini.exemplo config.ini     # já vem com tipo = fake
+
+# Roda com o venv do backend — as dependências (httpx, websockets) são as mesmas.
+../backend/.venv/Scripts/python.exe main.py     # Windows
+# ../backend/.venv/bin/python main.py           # Linux/macOS
+```
+
+O `usuario_id` no `config.ini` é o do usuário AGENTE, e o `python -m app.seed`
+imprime a tabela de ids no fim. Faça uma venda no PWA e a comanda aparece em
+`agente/cupons.txt` — que é o "papel" da `ImpressoraFake`.
+
+Vale desligar o agente, vender duas vezes e religar: ele pergunta ao servidor o
+que ficou sem imprimir e recupera as duas. E pedir REIMPRIMIR na tela da cozinha
+faz sair um segundo papel marcado `*** REIMPRESSAO ***`.
 
 **As migrations do Alembic não rodam em SQLite** — a `0001_inicial` usa
 `postgresql.UUID`. Por isso o passo 2 cria o schema direto pelo
@@ -141,11 +165,19 @@ Rodam em SQLite na memória, sem Docker e sem Postgres:
 
 ```bash
 cd backend
-.venv/Scripts/python.exe -m pytest
+.venv/Scripts/python.exe -m pytest          # 128 testes
+
+cd ../agente
+../backend/.venv/Scripts/python.exe -m pytest   # 15 testes
 ```
 
-O que é específico do Postgres — o `SELECT ... FOR UPDATE` da numeração de
-pedidos — não é coberto por esses testes e precisa do caminho B.
+Os do agente não precisam de servidor, de rede nem de impressora: a `Api` e a
+`Impressora` são fingidas, que é justamente pra isso que ele fala com um
+protocolo em vez de um modelo de impressora.
+
+Duas coisas **não** são cobertas e precisam de máquina de verdade: o
+`SELECT ... FOR UPDATE` da numeração de pedidos (é específico do Postgres, use o
+caminho B) e os drivers `EscPosUSB` / `EscPosRede` / `SpoolerWindows`.
 
 ## Configuração
 

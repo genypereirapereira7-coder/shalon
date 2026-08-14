@@ -89,6 +89,19 @@ export function usuarios() {
   return pedir("GET", "/auth/usuarios", null, { autenticado: false });
 }
 
+/**
+ * Renova o token de acesso agora. Devolve `true` se conseguiu.
+ *
+ * As chamadas REST renovam sozinhas ao tomar 401, mas o WebSocket não tem 401:
+ * o servidor derruba a conexão quando o token vence (ver `app/rotas/ws.py`) e
+ * quem reconecta precisa de um token novo na mão antes de tentar. Continua
+ * passando pelo mesmo `_renovar`, então segue valendo a trava que impede duas
+ * renovações simultâneas.
+ */
+export function renovarSessao() {
+  return _renovar();
+}
+
 // ------------------------------------------------------------------ chamadas
 
 /**

@@ -10,15 +10,20 @@
  * Quando a conexão cai, a tela não zera nem inventa: mostra os últimos números
  * que chegaram, com a hora em que chegaram, em amarelo (§7 da arquitetura).
  *
- * O "sozinho" da tela Hoje hoje é polling. O WebSocket é a fase 4; quando ele
- * existir, `agendarAtualizacao` vira a assinatura de `metricas.tick` e o resto
- * desta tela não muda.
+ * O `metricas.tick` do WebSocket traz o resumo **inteiro**, não só os três
+ * números do topo — é o que permite trocar total, ranking e alertas de uma vez
+ * só, sem nunca abrir uma janela em que a soma e o detalhe se contradizem. O
+ * polling continua por baixo como rede de segurança, só mais espaçado.
  */
 
 import * as api from "../comum/api.js";
 import { reais, valor, hora } from "../comum/formato.js";
+import * as ws from "../comum/ws.js";
 
 const INTERVALO_MS = 15000;
+
+/** Com o socket de pé, o polling é só conferência. */
+const INTERVALO_COM_SOCKET_MS = 60000;
 const CHAVE_ULTIMO = "shalon.dono.ultimo-resumo";
 
 const estado = {
@@ -36,6 +41,8 @@ const estado = {
   /** id do produto em edição de preço, ou null */
   editando: null,
   carregando: false,
+  /** Conexão do WebSocket, quando existe. */
+  socket: null,
 };
 
 const $ = (id) => document.getElementById(id);
@@ -186,6 +193,48 @@ async function abrirPainel() {
   trocarAba("hoje");
   await atualizar();
   agendarAtualizacao();
+  ligarSocket();
+}
+
+// ================================================================ tempo real
+
+function ligarSocket() {
+  estado.socket?.fechar();
+  estado.socket = ws.conectar({
+    aoEvento: aplicarEvento,
+    aoMudarConexao: (ligado) => {
+      agendarAtualizacao(ligado ? INTERVALO_COM_SOCKET_MS : INTERVALO_MS);
+      if (ligado) atualizar();
+    },
+  });
+}
+
+function aplicarEvento(evento, dados) {
+  if (evento === "metricas.tick") {
+    // O resumo vem inteiro e coerente: dá pra pintar direto, sem ir ao
+    // servidor de novo. É o mesmo formato do `/relatorios/hoje`.
+    estado.resumo = dados;
+    gravarUltimo(dados);
+    marcarOnline(true);
+    esconderErro();
+    desenharHoje();
+    if (estado.aba === "fechamento" && estado.dataFechamento === null) {
+      desenharFechamento(dados);
+    }
+    return;
+  }
+
+  // O dono também recebe os eventos de pedido (é o celular dele que salva o
+  // expediente quando a tela da cozinha trava), mas quem mexe nos números é o
+  // `metricas.tick`. Reagir aos dois pediria duas atualizações pra cada venda.
+  // Quem edita preço é o próprio dono, e o `salvarPreco` já acerta a tela dele.
+  // Isto aqui é pro segundo aparelho: o celular que está com o cardápio aberto
+  // enquanto a mudança sai no tablet. Não recarrega no meio de uma edição —
+  // puxar o cardápio debaixo do editor aberto apagaria o que está sendo
+  // digitado.
+  if (evento === "preco.alterado" && estado.cardapio && estado.editando === null) {
+    carregarCardapio();
+  }
 }
 
 function trocarAba(qual) {
@@ -238,18 +287,20 @@ async function atualizar() {
   }
 }
 
-function agendarAtualizacao() {
-  pararAtualizacao();
+function agendarAtualizacao(intervalo = INTERVALO_MS) {
+  clearInterval(timer);
   timer = setInterval(() => {
     // Celular no bolso com a tela apagada não precisa de número novo — e cada
     // chamada dessas é bateria.
     if (!document.hidden) atualizar();
-  }, INTERVALO_MS);
+  }, intervalo);
 }
 
 function pararAtualizacao() {
   clearInterval(timer);
   timer = null;
+  estado.socket?.fechar();
+  estado.socket = null;
 }
 
 // ====================================================================== hoje

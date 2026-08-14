@@ -64,6 +64,22 @@ def ler_token_acesso(token: str) -> Identidade | None:
         return None
 
 
+def validade_do_token(token: str) -> datetime | None:
+    """Quando este access token expira.
+
+    Só o `/ws` precisa disto. Uma conexão HTTP morre a cada requisição e
+    revalida o token na seguinte; um WebSocket aberto ficaria de pé pra sempre
+    com o token que apresentou na entrada — a tela da cozinha do PC nunca
+    fecha. Sabendo a validade, a rota derruba o socket no vencimento e o
+    cliente reconecta com um token novo.
+    """
+    try:
+        corpo = jwt.decode(token, cfg.jwt_segredo, algorithms=[cfg.jwt_algoritmo])
+        return datetime.fromtimestamp(corpo["exp"], UTC)
+    except (jwt.InvalidTokenError, KeyError, ValueError, TypeError, OSError):
+        return None
+
+
 # ------------------------------------------------------------ refresh token
 
 def gerar_refresh() -> tuple[str, str]:

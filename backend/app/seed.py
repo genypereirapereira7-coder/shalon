@@ -234,12 +234,24 @@ async def semear() -> None:
 
         await sessao.commit()
 
+        # O agente de impressão precisa do id do próprio usuário no
+        # `config.ini` (ele é conta de máquina e não entra por tela de login,
+        # onde a lista mostraria o id). Sem imprimir aqui, descobrir esse
+        # número vira uma consulta no banco.
+        usuarios = (await sessao.execute(select(Usuario).order_by(Usuario.id))).scalars()
+        linhas = [f"  {u.id:>3}  {u.papel.value:<12} {u.nome}" for u in usuarios]
+
     if criados:
         print(f"Criados {len(criados)} registros:")
         for item in criados:
             print(f"  + {item}")
     else:
         print("Nada a fazer — banco já semeado.")
+
+    print("\nUsuários:")
+    print("   id  papel        nome")
+    for linha in linhas:
+        print(linha)
 
     if not cfg.producao and cfg.senha_dono == "shalon123":
         print("\n  ATENÇÃO: senha do dono é a padrão. Defina SHALON_SENHA_DONO antes de subir.")
