@@ -1,7 +1,7 @@
 {
   "name": "Shalon Vendas",
   "short_name": "Vendas",
-  "description": "Balcão da sorveteria Shalon: monta o pedido e manda pra cozinha.",
+  "description": "Balcão da sorveteria Shalon: monta o pedido, envia e imprime a comanda.",
   "start_url": "./",
   "scope": "./",
   "id": "/vendas/",

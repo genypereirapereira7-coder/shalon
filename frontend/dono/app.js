@@ -36,7 +36,10 @@ const estado = {
   resumoFechamento: null,
   cardapio: null,
   historico: [],
-  usuarioEscolhido: null,
+  /** Sessões abertas, quando a folha de acessos está aberta. */
+  acessos: [],
+  /** Id da sessão à espera do segundo toque, quando ela é do próprio dono. */
+  confirmarAcesso: null,
   online: navigator.onLine,
   /** id do produto em edição de preço, ou null */
   editando: null,
@@ -79,72 +82,22 @@ function registrarServiceWorker() {
 
 // ===================================================================== login
 
-async function mostrarLogin() {
+function mostrarLogin() {
   pararAtualizacao();
   $("tela-painel").hidden = true;
   $("tela-login").hidden = false;
-  $("login-senha").hidden = true;
-  $("login-lista").hidden = false;
-  await carregarUsuarios();
-}
-
-async function carregarUsuarios() {
-  const lista = $("usuarios");
-  const carregando = $("login-carregando");
-  const recarregar = $("login-recarregar");
-
-  lista.innerHTML = "";
-  carregando.hidden = false;
-  carregando.textContent = "Carregando…";
-  recarregar.hidden = true;
-
-  try {
-    // Só quem é dono. O funcionário aparece na lista do PWA de vendas; aqui
-    // ele só tomaria 403 depois de digitar a senha.
-    const donos = (await api.usuarios()).filter((u) => u.papel === "DONO");
-    carregando.hidden = true;
-
-    for (const usuario of donos) {
-      const botao = document.createElement("button");
-      botao.innerHTML =
-        `<span>${escapar(usuario.nome)}</span>` +
-        `<span class="papel">${escapar(usuario.papel.toLowerCase())}</span>`;
-      botao.onclick = () => escolherUsuario(usuario);
-      lista.append(botao);
-    }
-
-    if (!donos.length) {
-      carregando.hidden = false;
-      carregando.textContent = "Nenhum dono cadastrado. Rode o seed no servidor.";
-    }
-  } catch (erro) {
-    carregando.hidden = false;
-    carregando.textContent =
-      erro instanceof api.ErroRede
-        ? "Sem conexão com o servidor."
-        : `Não deu pra carregar: ${erro.message}`;
-    recarregar.hidden = false;
-  }
-}
-
-function escolherUsuario(usuario) {
-  estado.usuarioEscolhido = usuario;
-  $("senha-nome").textContent = usuario.nome;
-  $("senha-campo").value = "";
   $("login-erro").hidden = true;
-  $("login-lista").hidden = true;
-  $("login-senha").hidden = false;
-  $("senha-campo").focus();
+  $("login-senha").value = "";
 }
 
 async function entrar() {
-  const campo = $("senha-campo");
-  const segredo = campo.value.trim();
+  const usuario = $("login-usuario").value.trim();
+  const senha = $("login-senha").value;
   const erroEl = $("login-erro");
-  const botao = $("senha-entrar");
+  const botao = $("login-entrar");
 
-  if (!segredo) {
-    erroEl.textContent = "Digite a senha";
+  if (!usuario || !senha) {
+    erroEl.textContent = "Preencha usuário e senha";
     erroEl.hidden = false;
     return;
   }
@@ -154,10 +107,12 @@ async function entrar() {
   erroEl.hidden = true;
 
   try {
-    const sessao = await api.entrar(estado.usuarioEscolhido.id, segredo);
-    campo.value = "";
+    const sessao = await api.entrar(usuario, senha);
+    $("login-senha").value = "";
 
-    // O papel vem do servidor no token, não da lista que a tela filtrou.
+    // O papel vem do servidor, no token. Sem esta checagem o funcionário
+    // entraria aqui com a própria senha e veria o faturamento do dia — as
+    // rotas de relatório respondem 403, mas a tela abriria vazia sem explicar.
     if (sessao.papel !== "DONO") {
       await api.sair();
       throw new Error("Este painel é só do dono.");
@@ -168,7 +123,8 @@ async function entrar() {
     erroEl.textContent =
       erro instanceof api.ErroRede ? "Sem conexão — não dá pra entrar agora." : erro.message;
     erroEl.hidden = false;
-    campo.value = "";
+    $("login-senha").value = "";
+    $("login-senha").focus();
   } finally {
     botao.disabled = false;
     botao.textContent = "ENTRAR";
@@ -720,18 +676,108 @@ async function confirmarFechamento() {
   }
 }
 
+// ==================================================================== acessos
+
+/**
+ * Quem está logado — e o botão de tirar.
+ *
+ * Mora no painel do usuário e não numa aba porque é conta, não número: o dono
+ * abre isto quando alguém saiu da loja ou perdeu o celular, não todo dia. As
+ * três abas continuam sendo as três coisas que ele olha diariamente.
+ */
+async function abrirAcessos() {
+  $("painel").hidden = true;
+  $("acessos").hidden = false;
+  await carregarAcessos();
+}
+
+async function carregarAcessos() {
+  const lista = $("lista-acessos");
+  lista.innerHTML = '<li class="fraco">Carregando…</li>';
+
+  try {
+    estado.acessos = await api.pedir("GET", "/auth/sessoes");
+    desenharAcessos();
+  } catch (erro) {
+    lista.innerHTML = `<li class="fraco">${escapar(
+      erro instanceof api.ErroRede ? "Sem conexão com o servidor." : erro.message,
+    )}</li>`;
+  }
+}
+
+function desenharAcessos() {
+  const lista = $("lista-acessos");
+  lista.innerHTML = "";
+
+  if (!estado.acessos.length) {
+    lista.innerHTML = '<li class="fraco">Ninguém logado no momento.</li>';
+    return;
+  }
+
+  for (const acesso of estado.acessos) {
+    const li = document.createElement("li");
+    li.className = "acesso";
+    li.innerHTML =
+      `<span class="acesso__quem">` +
+      `<strong>${escapar(acesso.usuario_nome)}</strong>` +
+      `<small>${escapar(acesso.papel.toLowerCase())}` +
+      (acesso.meu_usuario ? " · você" : "") +
+      `</small>` +
+      `<small>${escapar(acesso.dispositivo || "aparelho não identificado")}</small>` +
+      `<small>entrou ${escapar(quando(acesso.criado_em))}</small>` +
+      `</span>` +
+      `<button class="acesso__x" data-remover>Remover</button>`;
+
+    li.querySelector("[data-remover]").onclick = () => removerAcesso(acesso);
+    lista.append(li);
+  }
+}
+
+/** Data e hora do login, curtinho: "hoje 14:32" ou "12/08 14:32". */
+function quando(iso) {
+  const momento = new Date(iso);
+  const hoje = new Date().toDateString() === momento.toDateString();
+  return hoje
+    ? `hoje ${hora(momento)}`
+    : `${momento.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" })} ${hora(momento)}`;
+}
+
+/**
+ * Tira o acesso de um aparelho.
+ *
+ * Pede confirmação quando o alvo é o próprio dono, porque o token de acesso
+ * não diz *qual* aparelho é este — só de quem ele é. Sem o aviso, um toque
+ * distraído derrubaria o próprio celular sem o dono entender o porquê.
+ */
+async function removerAcesso(acesso) {
+  if (acesso.meu_usuario && estado.confirmarAcesso !== acesso.id) {
+    estado.confirmarAcesso = acesso.id;
+    aviso("É um login seu — toque de novo pra remover mesmo assim", "erro");
+    return;
+  }
+
+  estado.confirmarAcesso = null;
+  try {
+    await api.pedir("DELETE", `/auth/sessoes/${acesso.id}`);
+    aviso("Acesso removido", "ok");
+    await carregarAcessos();
+  } catch (erro) {
+    aviso(
+      erro instanceof api.ErroRede ? "Sem conexão — tente de novo" : erro.message,
+      "erro",
+    );
+  }
+}
+
 // =================================================================== eventos
 
 function ligarEventos() {
   // --- login
-  $("login-recarregar").onclick = carregarUsuarios;
-  $("senha-voltar").onclick = () => {
-    $("login-senha").hidden = true;
-    $("login-lista").hidden = false;
-  };
-  $("senha-entrar").onclick = entrar;
-  $("senha-campo").addEventListener("keydown", (e) => {
-    if (e.key === "Enter") entrar();
+  // `submit` e não o clique do botão: é o que faz o "ir" do teclado do celular
+  // entrar, sem ter que fechar o teclado pra achar o botão.
+  $("login-form").addEventListener("submit", (e) => {
+    e.preventDefault();
+    entrar();
   });
 
   // --- abas
@@ -745,6 +791,11 @@ function ligarEventos() {
     const sessao = api.sessaoAtual();
     $("painel-usuario-nome").textContent = `${sessao?.nome ?? ""} · ${sessao?.papel ?? ""}`;
   };
+  $("btn-acessos").onclick = abrirAcessos;
+  $("acessos-atualizar").onclick = carregarAcessos;
+  for (const alvo of document.querySelectorAll("[data-fechar-acessos]")) {
+    alvo.onclick = () => ($("acessos").hidden = true);
+  }
   $("btn-sair").onclick = sair;
   $("btn-atualizar").onclick = async () => {
     $("painel").hidden = true;

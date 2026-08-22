@@ -8,6 +8,10 @@
  *
  * O roxo no lugar do rosa não é enfeite: os dois PWAs ficam lado a lado na
  * tela inicial do celular e precisam se distinguir de relance.
+ *
+ * Celular e nada mais, como o de vendas: o dono abre isto no bolso, entre uma
+ * coisa e outra. Numa tela larga o app fica na coluna que o `comum/estilo.css`
+ * define, sem esticar.
  */
 
 :root {
@@ -24,9 +28,14 @@
   align-items: center;
   justify-content: center;
   gap: 12px;
-  min-height: 100%;
-  padding: 24px 20px calc(24px + var(--seguro-baixo));
+  /* Altura fixa com rolagem própria — a página está travada (§estilo.css). E o
+     recorte do topo entra no padding: sem ele a caixa de senha nasce por baixo
+     do notch quando o teclado sobe e encolhe a tela. */
+  height: 100%;
+  overflow-y: auto;
+  padding: calc(24px + var(--seguro-topo)) 20px calc(24px + var(--seguro-baixo));
   background: var(--dono-fundo);
+  -webkit-overflow-scrolling: touch;
 }
 
 .login__marca {
@@ -60,46 +69,18 @@
   text-align: center;
 }
 
-.login__voltar {
-  position: absolute;
-  top: 12px;
-  left: 10px;
-  padding: 6px 10px;
-  color: var(--tinta-fraca);
-  font-size: 15px;
-}
-
-.login__usuarios {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-
-.login__usuarios button {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  min-height: var(--alvo);
-  padding: 0 18px;
-  border: 1px solid var(--linha);
-  border-radius: var(--raio);
-  background: var(--papel);
-  font-weight: 700;
-  text-align: left;
-}
-
-.login__usuarios button:active {
-  background: var(--dono-fundo);
-}
-
-.login__usuarios .papel {
+.login__rotulo {
+  display: block;
+  margin-bottom: 6px;
   color: var(--tinta-fraca);
   font-size: 13px;
-  font-weight: 600;
+  font-weight: 700;
   text-transform: uppercase;
+  letter-spacing: 0.5px;
 }
 
-.login__senha {
+/* 18px e não menos: abaixo de 16px o iOS dá zoom sozinho ao focar o campo. */
+.login__campo {
   width: 100%;
   min-height: var(--alvo);
   margin-bottom: 14px;
@@ -107,13 +88,18 @@
   border: 2px solid var(--linha);
   border-radius: var(--raio);
   background: var(--fundo);
-  font-size: 20px;
-  letter-spacing: 2px;
+  font-size: 18px;
 }
 
-.login__senha:focus {
+.login__campo:focus {
   border-color: var(--dono);
   outline: none;
+}
+
+.login__nota {
+  margin: 0;
+  font-size: 13px;
+  text-align: center;
 }
 
 .login__erro {
@@ -133,7 +119,10 @@
 .painel-dono {
   display: flex;
   flex-direction: column;
-  min-height: 100%;
+  /* `height` e não `min-height`: é o que faz a rolagem acontecer dentro do
+     `.conteudo`, deixando o topo e as abas parados. Com `min-height` a coluna
+     cresce e quem teria de rolar seria a página. */
+  height: 100%;
 }
 
 .topo {
@@ -163,6 +152,62 @@
   font-weight: 600;
 }
 
+/* ==================================================================== acessos */
+
+.acessos {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.acesso {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--linha);
+}
+
+.acesso:last-child {
+  border-bottom: 0;
+}
+
+.acesso__quem {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+  min-width: 0;
+}
+
+.acesso__quem strong {
+  font-size: 16px;
+}
+
+.acesso__quem small {
+  color: var(--tinta-fraca);
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+
+.acesso__x {
+  flex: none;
+  min-height: 44px;
+  padding: 0 14px;
+  border: 1px solid var(--vermelho);
+  border-radius: 10px;
+  color: var(--vermelho);
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.acesso__x:active {
+  background: var(--vermelho-fundo);
+}
+
 /* ====================================================================== abas */
 
 .abas {
@@ -190,8 +235,10 @@
 
 .conteudo {
   flex: 1;
+  min-height: 0;
   padding: 14px 12px calc(24px + var(--seguro-baixo));
   overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
 }
 
 .conteudo__dica {
@@ -541,6 +588,7 @@
   gap: 10px;
   width: 100%;
   max-height: 86vh;
+  max-height: 86dvh;
   padding: 20px 16px calc(20px + var(--seguro-baixo));
   border-radius: 20px 20px 0 0;
   background: var(--papel);

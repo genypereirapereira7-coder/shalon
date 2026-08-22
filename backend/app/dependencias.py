@@ -56,7 +56,33 @@ def exige(*papeis: Papel) -> Callable[..., Coroutine[Any, Any, Identidade]]:
 
 SoDono = Annotated[Identidade, Depends(exige(Papel.DONO))]
 
-# O dono entra em tudo: é o celular dele que salva o expediente quando a tela
-# da cozinha trava ou o agente cai.
+# O dono entra em tudo: é o celular dele que salva o expediente quando o
+# balcão trava ou o agente cai.
 SoCozinha = Annotated[Identidade, Depends(exige(Papel.COZINHA, Papel.DONO))]
+
+# Leitura da fila de impressão: conta de máquina. É a varredura que o agente
+# faz do dia inteiro, incluindo venda de outro atendente.
 SoAgente = Annotated[Identidade, Depends(exige(Papel.AGENTE, Papel.DONO))]
+
+# Quem confirma que a comanda saiu. O funcionário entrou aqui quando a
+# impressão mudou de lugar: hoje quem manda o cupom pro papel é o celular do
+# balcão, pelo RawBT (`frontend/vendas/impressao.js`), e sem esta permissão a
+# venda ficaria pra sempre na fila de não-impressos — fazendo o agente do PC,
+# se alguém o mantiver ligado, imprimir uma segunda via de tudo.
+#
+# É a permissão mais fraca do sistema de propósito: marca uma data num pedido
+# que o próprio aparelho acabou de criar, não mexe em dinheiro nem em status.
+SoImpressor = Annotated[
+    Identidade, Depends(exige(Papel.AGENTE, Papel.FUNCIONARIO, Papel.DONO))
+]
+
+# Quem pode cancelar uma venda. O balcão entra porque é lá que o erro acontece
+# e é lá que o cliente está — mandar chamar o dono pra desfazer um pedido
+# digitado errado deixaria a fila parada.
+#
+# A permissão é ampla, o poder não: a rota restringe o funcionário aos pedidos
+# que ele mesmo criou, no dia de hoje. Quem cancela venda de outro atendente ou
+# de outro dia é o dono. E todo cancelamento grava motivo e autor, e aparece
+# destacado no painel do dono — cancelar é dinheiro saindo do caixa, e o que
+# protege isso é o registro, não a dificuldade.
+SoCaixa = Annotated[Identidade, Depends(exige(Papel.FUNCIONARIO, Papel.DONO))]

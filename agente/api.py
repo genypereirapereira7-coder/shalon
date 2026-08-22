@@ -5,8 +5,8 @@ importa aqui é diferente do `frontend/comum/api.js`: ninguém vai ver uma
 mensagem de erro e tentar de novo — se algo falhar, quem tem que insistir é o
 programa.
 
-**O refresh dura 60 dias** (§ da config do backend). É o que permite ao PC da
-cozinha ser desligado no domingo e voltar na terça sem alguém digitar PIN.
+**O refresh dura um ano e desliza** (§ da config do backend). É o que permite
+ao PC ser desligado no domingo e voltar na terça sem ninguém digitar senha.
 """
 
 import asyncio
@@ -22,9 +22,9 @@ class ErroApi(Exception):
 
 
 class Api:
-    def __init__(self, url: str, usuario_id: int, pin: str) -> None:
+    def __init__(self, url: str, usuario: str, pin: str) -> None:
         self._url = url.rstrip("/")
-        self._usuario_id = usuario_id
+        self._usuario = usuario
         self._pin = pin
         self._acesso: str | None = None
         self._refresh: str | None = None
@@ -42,7 +42,7 @@ class Api:
         resposta = await self._http.post(
             "/auth/login",
             json={
-                "usuario_id": self._usuario_id,
+                "usuario": self._usuario,
                 "segredo": self._pin,
                 "dispositivo": "agente-de-impressao",
             },
@@ -56,7 +56,7 @@ class Api:
             # comandas sairiam assinadas por ele e o PIN do dono ficaria em
             # texto plano num .ini do PC da cozinha.
             raise ErroApi(
-                f"O usuário {self._usuario_id} tem papel {corpo.get('papel')}, não AGENTE."
+                f"O usuário {self._usuario!r} tem papel {corpo.get('papel')}, não AGENTE."
             )
 
         self._acesso = corpo["acesso"]

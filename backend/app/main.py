@@ -24,7 +24,7 @@ cfg = get_config()
 async def ciclo_de_vida(_: FastAPI):
     """Encosta no banco no arranque e grita se ele não responder.
 
-    Sem isto o servidor sobe feliz, serve as três telas e só falha quando
+    Sem isto o servidor sobe feliz, serve as duas telas e só falha quando
     alguém aperta um botão — com uma parede de traceback do driver no terminal
     e um "Erro 500" na cara de quem está no balcão. O caso comum em
     desenvolvimento é ter esquecido as variáveis de ambiente e estar apontando
@@ -122,8 +122,10 @@ async def health():
 
 
 # Em dev o próprio FastAPI serve os PWAs; em produção quem serve é o Caddy.
+# São dois: vendas e dono. A tela da cozinha saiu junto com o PC da cozinha
+# — quem imprime a comanda agora é o próprio celular do balcão, pelo RawBT.
 _frontend = (Path(__file__).resolve().parent.parent / cfg.dir_frontend).resolve()
-for _nome in ("vendas", "dono", "cozinha"):
+for _nome in ("vendas", "dono"):
     _pasta = _frontend / _nome
     if _pasta.is_dir():
         app.mount(f"/{_nome}", StaticFiles(directory=_pasta, html=True), name=_nome)

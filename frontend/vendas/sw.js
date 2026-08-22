@@ -12,7 +12,7 @@
  * antigo e evita o PWA congelado numa versão de duas semanas atrás.
  */
 
-const VERSAO = "v3";
+const VERSAO = "v8";
 const CACHE = `shalon-vendas-${VERSAO}`;
 
 const CASCA = [
@@ -20,6 +20,9 @@ const CASCA = [
   "./index.html",
   "./app.js",
   "./fila.js",
+  "./comanda.js",
+  "./rawbt.js",
+  "./impressao.js",
   "./vendas.css",
   "./manifest.json",
   "./icone-192.png",
@@ -27,7 +30,6 @@ const CASCA = [
   "../comum/api.js",
   "../comum/formato.js",
   "../comum/ws.js",
-  "../comum/relogio.js",
   "../comum/estilo.css",
 ];
 

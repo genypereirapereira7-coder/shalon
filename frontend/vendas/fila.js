@@ -11,9 +11,10 @@
  * Isto aqui é a única cópia de uma venda que ainda não chegou no servidor.
  *
  * Estados de um registro:
- *   PENDENTE  esperando subir (ou tentando)
- *   ENVIADO   o servidor confirmou, tem numero_dia
- *   RECUSADO  o servidor recusou de vez (422). Não adianta reenviar.
+ *   PENDENTE   esperando subir (ou tentando)
+ *   ENVIADO    o servidor confirmou, tem numero_dia
+ *   RECUSADO   o servidor recusou de vez (422). Não adianta reenviar.
+ *   CANCELADO  a venda foi desfeita; o valor saiu do caixa
  */
 
 const BANCO = "shalon-vendas";
@@ -25,6 +26,16 @@ const GUARDAR_ENVIADOS_MS = 24 * 60 * 60 * 1000;
 
 let conexao = null;
 
+/**
+ * A conexão, aberta uma vez e reaproveitada — mas **descartada se falhar**.
+ *
+ * Guardar a promessa rejeitada seria guardar o defeito: toda chamada seguinte
+ * herdaria a mesma falha, pra sempre, mesmo depois de o motivo ter passado. E
+ * o motivo passa — outra aba segurando o banco durante uma migração, o
+ * navegador negando armazenamento por um instante em aba anônima. O sintoma
+ * disso é cruel: a tela abre, fica em "Carregando cardápio…" e não explica
+ * nada, porque quem morreu foi a leitura da fila e não o cardápio.
+ */
 function abrir() {
   if (conexao) return conexao;
 
@@ -46,6 +57,11 @@ function abrir() {
     pedido.onsuccess = () => resolve(pedido.result);
     pedido.onerror = () => rejeitar(pedido.error);
     pedido.onblocked = () => rejeitar(new Error("IndexedDB bloqueado por outra aba"));
+  });
+
+  // Falhou: esquece esta tentativa pra que a próxima chamada abra de novo.
+  conexao.catch(() => {
+    conexao = null;
   });
 
   return conexao;
@@ -102,8 +118,29 @@ export async function marcarEnviado(idCliente, resposta) {
     numero_dia: resposta.numero_dia,
     id_servidor: resposta.id,
     total_servidor: resposta.total_centavos,
+    // O `PedidoSaida` inteiro, do jeito que o servidor devolveu. É dele que sai
+    // a segunda via da comanda: reconstruir o cupom a partir do carrinho local
+    // imprimiria os preços que o celular calculou, e quem manda no preço é o
+    // servidor. Sai daqui junto com o registro no `limparAntigos`.
+    pedido: resposta,
     enviado_em: new Date().toISOString(),
     erro: null,
+  }));
+}
+
+/**
+ * A venda foi desfeita no servidor.
+ *
+ * O registro fica na lista em vez de sumir: quem cancelou precisa ver que deu
+ * certo, e um pedido que evapora da tela deixa a dúvida de se o valor saiu
+ * mesmo do caixa. Some sozinho no `limparAntigos`, junto com os enviados.
+ */
+export async function marcarCancelado(idCliente, motivo) {
+  return _atualizar(idCliente, (registro) => ({
+    ...registro,
+    status: "CANCELADO",
+    motivo_cancelamento: motivo,
+    cancelado_em: new Date().toISOString(),
   }));
 }
 
@@ -131,12 +168,12 @@ export async function descartar(idCliente) {
 }
 
 /**
- * Limpa o que já subiu e envelheceu. Pedido PENDENTE nunca é apagado por
- * idade: é venda que ainda não chegou no caixa.
+ * Limpa o que já foi resolvido e envelheceu. Pedido PENDENTE nunca é apagado
+ * por idade: é venda que ainda não chegou no caixa.
  */
 export async function limparAntigos(agora = Date.now()) {
-  const enviados = await porStatus("ENVIADO");
-  const velhos = enviados.filter(
+  const resolvidos = [...(await porStatus("ENVIADO")), ...(await porStatus("CANCELADO"))];
+  const velhos = resolvidos.filter(
     (r) => agora - new Date(r.enviado_em ?? r.criado_em_cliente).getTime() > GUARDAR_ENVIADOS_MS,
   );
   await transacao("readwrite", (loja) => {

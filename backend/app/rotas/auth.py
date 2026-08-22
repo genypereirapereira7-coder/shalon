@@ -1,16 +1,22 @@
-"""Login por PIN/senha, renovação de token e logout."""
+"""Login por nome e senha, renovação de token, logout e sessões abertas."""
 
+import uuid
 from datetime import timedelta
-from typing import Annotated
 
-from fastapi import APIRouter, HTTPException, Query, Request, status
-from sqlalchemy import select
+from fastapi import APIRouter, HTTPException, Request, status
+from sqlalchemy import func, select
 
 from app.config import get_config
-from app.dependencias import IdentidadeDep, SessaoDep
+from app.dependencias import IdentidadeDep, SessaoDep, SoDono
 from app.models.base import agora
-from app.models.usuario import Papel, SessaoAuth, Usuario
-from app.schemas.auth import LoginEntrada, RenovarEntrada, TokensSaida, UsuarioPublico
+from app.models.usuario import SessaoAuth, Usuario
+from app.schemas.auth import (
+    LoginEntrada,
+    RenovarEntrada,
+    SessaoAtiva,
+    TokensSaida,
+    UsuarioPublico,
+)
 from app.seguranca import (
     conferir_hash,
     criar_token_acesso,
@@ -23,41 +29,19 @@ cfg = get_config()
 rotas = APIRouter(prefix="/auth", tags=["auth"])
 
 
-@rotas.get("/usuarios", response_model=list[UsuarioPublico])
-async def listar_usuarios(
-    sessao: SessaoDep,
-    papel: Annotated[list[Papel] | None, Query()] = None,
-):
-    """Lista pra tela de login escolher quem vai entrar.
-
-    Só nome e papel — nenhum dado sensível. PIN continua sendo o segredo.
-
-    Sem filtro devolve quem loga no balcão (dono e funcionário), que é o padrão
-    do PWA de vendas. A tela da cozinha pede `?papel=COZINHA&papel=DONO`: ela
-    também precisa de uma lista pra login, e sem isto não teria como descobrir
-    o id do próprio usuário.
-
-    O agente de impressão nunca aparece, com ou sem filtro: é conta de máquina,
-    não loga por tela nenhuma, e o PIN dela é fraco de propósito.
-    """
-    pedidos = papel or [Papel.DONO, Papel.FUNCIONARIO]
-    visiveis = [p for p in pedidos if p is not Papel.AGENTE]
-    if not visiveis:
-        raise HTTPException(
-            status.HTTP_400_BAD_REQUEST, "O agente de impressão não entra por tela de login"
-        )
-
-    consulta = (
-        select(Usuario)
-        .where(Usuario.ativo.is_(True), Usuario.papel.in_(visiveis))
-        .order_by(Usuario.nome)
-    )
-    return list((await sessao.execute(consulta)).scalars())
-
-
 @rotas.post("/login", response_model=TokensSaida)
 async def login(dados: LoginEntrada, request: Request, sessao: SessaoDep):
-    chave = f"{request.client.host if request.client else '?'}:{dados.usuario_id}"
+    """Entra com nome de usuário e senha.
+
+    Não existe mais rota que liste os usuários: a tela de login não mostra
+    quem existe, e descobrir isso passa a ser problema de quem tentar entrar.
+
+    O nome não diferencia maiúscula de minúscula e ignora espaço nas pontas —
+    quem digita está de pé, com pressa, e "Vanusa " com um espaço a mais não
+    pode virar "usuário ou senha inválidos".
+    """
+    nome = dados.usuario.strip()
+    chave = f"{request.client.host if request.client else '?'}:{nome.lower()}"
 
     bloqueio = trava_login.segundos_restantes(chave)
     if bloqueio:
@@ -66,12 +50,14 @@ async def login(dados: LoginEntrada, request: Request, sessao: SessaoDep):
             f"Muitas tentativas. Tente de novo em {bloqueio}s.",
         )
 
-    usuario = await sessao.get(Usuario, dados.usuario_id)
-    # Mesma resposta pra usuário inexistente e PIN errado: não entregamos
-    # de graça a informação de quais ids existem.
+    consulta = select(Usuario).where(func.lower(Usuario.nome) == nome.lower()).limit(1)
+    usuario = (await sessao.execute(consulta)).scalars().first()
+
+    # Mesma resposta pra usuário inexistente e senha errada: não entregamos de
+    # graça a informação de quais nomes existem.
     if usuario is None or not usuario.ativo or not conferir_hash(dados.segredo, usuario.pin_hash):
         trava_login.registrar_falha(chave)
-        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Usuário ou PIN inválido")
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Usuário ou senha inválidos")
 
     trava_login.limpar(chave)
     return await _emitir_tokens(sessao, usuario, dados.dispositivo)
@@ -119,6 +105,63 @@ async def sair(dados: RenovarEntrada, sessao: SessaoDep):
     sessao_auth = (await sessao.execute(consulta)).scalar_one_or_none()
     if sessao_auth and sessao_auth.revogado_em is None:
         sessao_auth.revogado_em = agora()
+
+
+@rotas.get("/sessoes", response_model=list[SessaoAtiva])
+async def sessoes_abertas(sessao: SessaoDep, dono: SoDono):
+    """Quem está logado agora, do login mais recente pro mais antigo.
+
+    Só o dono vê. É a lista de aparelhos com acesso ao sistema — saber que
+    existe um login de dezembro num celular que ninguém reconhece é o ponto.
+
+    Sessão revogada ou vencida não aparece: a tela existe pra responder "quem
+    entra hoje", e um histórico de logins antigos misturado só faria a resposta
+    demorar mais.
+    """
+    consulta = (
+        select(SessaoAuth, Usuario)
+        .join(Usuario, Usuario.id == SessaoAuth.usuario_id)
+        .where(SessaoAuth.revogado_em.is_(None), SessaoAuth.expira_em > agora())
+        .order_by(SessaoAuth.criado_em.desc())
+    )
+
+    return [
+        SessaoAtiva(
+            id=s.id,
+            usuario_id=usuario.id,
+            usuario_nome=usuario.nome,
+            papel=usuario.papel,
+            dispositivo=s.dispositivo,
+            criado_em=s.criado_em,
+            expira_em=s.expira_em,
+            meu_usuario=usuario.id == dono.usuario_id,
+        )
+        for s, usuario in (await sessao.execute(consulta)).all()
+    ]
+
+
+@rotas.delete("/sessoes/{sessao_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def revogar_sessao(sessao_id: uuid.UUID, sessao: SessaoDep, _: SoDono):
+    """Tira o acesso de um aparelho.
+
+    O refresh morre na hora, então o aparelho não consegue mais renovar. O
+    token de acesso que ele já tem na mão continua valendo até vencer — são
+    até 30 minutos (`acesso_expira_min`). Isso é consequência de o token ser
+    assinado e não consultado: validá-lo contra o banco custaria uma consulta
+    em toda chamada de toda tela, o dia inteiro, pra cobrir um caso que
+    acontece uma vez por ano.
+
+    Quem precisa cortar **agora** — celular roubado — desativa o usuário, e não
+    só a sessão. A tela avisa dessa janela em vez de prometer o que a rota não
+    entrega.
+    """
+    aberta = await sessao.get(SessaoAuth, sessao_id)
+    if aberta is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Sessão não existe")
+
+    # Já revogada não é erro: dois toques no mesmo botão, ou duas abas abertas.
+    if aberta.revogado_em is None:
+        aberta.revogado_em = agora()
 
 
 @rotas.get("/eu", response_model=UsuarioPublico)

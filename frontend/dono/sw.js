@@ -12,7 +12,7 @@
  * Ao mexer nos arquivos do app, suba o VERSAO.
  */
 
-const VERSAO = "v2";
+const VERSAO = "v4";
 const CACHE = `shalon-dono-${VERSAO}`;
 
 const CASCA = [
@@ -26,7 +26,6 @@ const CASCA = [
   "../comum/api.js",
   "../comum/formato.js",
   "../comum/ws.js",
-  "../comum/relogio.js",
   "../comum/estilo.css",
 ];
 

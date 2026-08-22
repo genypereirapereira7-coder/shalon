@@ -1,13 +1,25 @@
 /*
  * Base visual dos PWAs do Shalon.
  *
- * Duas regras guiam tudo aqui:
+ * **Isto é feito pra celular e só pra celular.** Não há layout de tablet nem de
+ * desktop em lugar nenhum: as duas telas do sistema são um aparelho na mão de
+ * alguém em pé — o funcionário no balcão e o dono onde estiver. Aberto numa
+ * tela larga, o app trava numa coluna da largura de um celular em vez de
+ * esticar; um botão de 800px de largura não fica melhor, fica só maior.
+ *
+ * Três regras guiam tudo aqui:
  *   - Alvo de toque nunca abaixo de 48px. Quem usa isso está de mão molhada,
  *     com fila na frente, olhando pro cliente e não pra tela.
  *   - Contraste alto. O celular fica num balcão perto da janela, no sol.
+ *   - A tela toda é a moldura do app: quem rola é uma área lá dentro, nunca a
+ *     página. Barra de cima que aparece e some no meio da venda tira o botão
+ *     ENVIAR do lugar onde o dedo já estava indo.
  */
 
 :root {
+  /* A largura em que o app trava numa tela maior que um celular. */
+  --celular: 460px;
+
   --rosa: #e8618c;
   --rosa-claro: #f7d3e0;
   --rosa-fundo: #fff5f8;
@@ -40,8 +52,23 @@
 
 html,
 body {
-  height: 100%;
   margin: 0;
+  /* `dvh` é a altura de verdade da janela do celular — a que encolhe e cresce
+     junto com a barra de endereço do Chrome. Com `100%` o app fica alto
+     demais e o rodapé do carrinho some por baixo da barra. O `100%` continua
+     como plano B pra navegador que não conhece a unidade. */
+  height: 100%;
+  height: 100dvh;
+  /* Quem rola é sempre um pedaço da tela (a grade de produtos, a lista do
+     dono), nunca a página. Sem isto o app inteiro balança no toque. */
+  overflow: hidden;
+}
+
+html {
+  /* O Android aumenta a fonte sozinho em bloco de texto largo, e a conta do
+     total sai desalinhada da linha do item. */
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
 }
 
 body {
@@ -52,6 +79,26 @@ body {
   /* App de balcão: seleção de texto acidental só atrapalha. */
   -webkit-user-select: none;
   user-select: none;
+}
+
+/* Numa tela mais larga que um celular — o navegador do PC em que alguém vai
+   conferir uma coisa — o app vira uma coluna do tamanho de um aparelho. Não é
+   um layout de desktop: é o mesmo layout, sem esticar. */
+@media (min-width: 520px) {
+  body {
+    width: var(--celular);
+    margin-inline: auto;
+    border-inline: 1px solid var(--linha);
+  }
+
+  /* `position: fixed` mede a janela, não o body: sem isto as folhas que sobem
+     de baixo ocupariam a tela inteira do monitor, soltas da coluna do app. */
+  .painel {
+    left: 50%;
+    right: auto;
+    width: var(--celular);
+    transform: translateX(-50%);
+  }
 }
 
 button {
@@ -142,6 +189,18 @@ textarea {
 .faixa--erro {
   background: var(--vermelho-fundo);
   color: var(--vermelho);
+}
+
+/* Faixa que também é botão: o aviso e a saída no mesmo lugar, porque quem lê
+   "a comanda não saiu" já está com a mão indo pra tela pra resolver. */
+.faixa--acao {
+  width: 100%;
+  min-height: var(--alvo);
+  text-align: left;
+}
+
+.faixa--acao:active {
+  filter: brightness(0.95);
 }
 
 /* Aviso flutuante de "deu certo" / "deu ruim". Some sozinho.

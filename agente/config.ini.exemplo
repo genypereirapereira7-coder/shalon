@@ -1,12 +1,17 @@
 # Configuração do agente de impressão.
-# Copie para `config.ini` e ajuste. Este arquivo fica no PC da cozinha.
+#
+# ATENCAO: o caminho principal de impressao e o RawBT no celular do balcao
+# (veja o README). Este agente e a alternativa pra quem prende a termica num
+# PC — nao rode os dois ao mesmo tempo, senao cada comanda sai duas vezes.
+#
+# Copie para `config.ini` e ajuste. Este arquivo fica no PC da impressora.
 
 [servidor]
 # Em produção: https://shalon.app.br
 url = http://127.0.0.1:8000
 
-# O id do usuário AGENTE no banco. Ele aparece no fim do `python -m app.seed`.
-usuario_id = 4
+# O nome da conta de máquina, como está no `app.seed`.
+usuario = Agente de impressão
 pin = 0000
 
 
@@ -41,10 +46,3 @@ arquivo = cupons.txt
 fuso = America/Sao_Paulo
 # 48 = 80mm em Font A. Não use 58mm: o cupom fica ilegível (§3).
 largura = 48
-
-
-[cozinha]
-# Abrir a tela da cozinha no navegador quando o agente subir.
-abrir = nao
-# Vazio = navegador padrão. Ex.: windows-default, chrome
-navegador =

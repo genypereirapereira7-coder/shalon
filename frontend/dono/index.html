@@ -2,7 +2,10 @@
 <html lang="pt-BR">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1">
+<!-- `interactive-widget=resizes-content`: o teclado do Android encolhe a área
+     do app em vez de deslizar por cima. Sem isto o campo de preço fica escondido
+     atrás do teclado bem na hora de digitar o valor novo. -->
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1, interactive-widget=resizes-content">
 <title>Shalon — Dono</title>
 <meta name="theme-color" content="#7a5a9c">
 <meta name="mobile-web-app-capable" content="yes">
@@ -20,25 +23,23 @@
   <h1 class="login__marca">Shalon</h1>
   <p class="login__papel">Painel do dono</p>
 
-  <div id="login-lista" class="login__caixa">
-    <p class="login__titulo">Entrar como</p>
-    <div id="usuarios" class="login__usuarios"></div>
-    <p id="login-carregando" class="fraco">Carregando…</p>
-    <button id="login-recarregar" class="botao botao--fantasma" hidden>Tentar de novo</button>
-  </div>
+  <!-- Dois campos e mais nada. A tela não mostra quem existe: listar os
+       usuários entregaria a qualquer pessoa com o link o nome do dono. -->
+  <form id="login-form" class="login__caixa" autocomplete="on">
+    <label class="login__rotulo" for="login-usuario">Usuário</label>
+    <input id="login-usuario" class="login__campo" type="text" name="username"
+           autocomplete="username" autocapitalize="none" autocorrect="off"
+           spellcheck="false" maxlength="80" enterkeyhint="next">
 
-  <div id="login-senha" class="login__caixa" hidden>
-    <button id="senha-voltar" class="login__voltar">‹ Trocar</button>
-    <p class="login__titulo"><span id="senha-nome"></span>, digite a senha</p>
-
-    <!-- Senha, não PIN: o dono tem senha de verdade, então aqui é o teclado
-         do próprio celular — sem o teclado numérico da tela de vendas. -->
-    <input id="senha-campo" class="login__senha" type="password"
-           autocomplete="current-password" maxlength="72" aria-label="Senha">
+    <label class="login__rotulo" for="login-senha">Senha</label>
+    <input id="login-senha" class="login__campo" type="password" name="password"
+           autocomplete="current-password" maxlength="72" enterkeyhint="go">
 
     <p id="login-erro" class="login__erro" hidden></p>
-    <button id="senha-entrar" class="botao login__entrar">ENTRAR</button>
-  </div>
+    <button id="login-entrar" class="botao login__entrar" type="submit">ENTRAR</button>
+  </form>
+
+  <p class="login__nota fraco">A senha é pedida uma vez só neste aparelho.</p>
 </section>
 
 <!-- ============================================================== PAINEL -->
@@ -150,8 +151,28 @@
     <p class="painel__titulo" id="painel-usuario-nome"></p>
     <p class="fraco" id="painel-versao"></p>
     <button id="btn-atualizar" class="botao botao--fantasma">Atualizar agora</button>
+    <button id="btn-acessos" class="botao botao--fantasma">Quem está logado</button>
     <button id="btn-sair" class="botao botao--perigo">Sair</button>
     <button class="botao botao--fantasma" data-fechar>Fechar</button>
+  </div>
+</div>
+
+<!-- ============================================================== ACESSOS -->
+<!-- Os aparelhos com acesso ao sistema. Só o dono vê e só o dono tira. -->
+<div id="acessos" class="painel" hidden>
+  <div class="painel__fundo" data-fechar-acessos></div>
+
+  <div class="painel__folha">
+    <p class="painel__titulo">Quem está logado</p>
+    <p class="fraco">
+      Cada linha é um aparelho que entrou com usuário e senha. Ao remover, ele
+      volta pra tela de login — pode levar até 30 minutos pra valer.
+    </p>
+
+    <ul id="lista-acessos" class="acessos"></ul>
+
+    <button id="acessos-atualizar" class="botao botao--fantasma">Atualizar lista</button>
+    <button class="botao botao--fantasma" data-fechar-acessos>Fechar</button>
   </div>
 </div>
 

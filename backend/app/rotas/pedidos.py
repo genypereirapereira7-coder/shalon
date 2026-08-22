@@ -6,7 +6,14 @@ from typing import Annotated
 from fastapi import APIRouter, HTTPException, Query, Response, status
 from sqlalchemy import select
 
-from app.dependencias import IdentidadeDep, SessaoDep, SoAgente, SoCozinha, SoDono
+from app.dependencias import (
+    IdentidadeDep,
+    SessaoDep,
+    SoAgente,
+    SoCaixa,
+    SoCozinha,
+    SoImpressor,
+)
 from app.models.base import agora
 from app.models.pedido import Pedido, StatusPedido
 from app.models.usuario import Papel
@@ -110,12 +117,24 @@ async def nao_impressos(sessao: SessaoDep, _: SoAgente):
 
 
 @rotas.post("/{pedido_id}/impresso", response_model=PedidoSaida)
-async def marcar_impresso(pedido_id: uuid.UUID, sessao: SessaoDep, _: SoAgente):
-    """ACK do agente: saiu papel.
+async def marcar_impresso(pedido_id: uuid.UUID, sessao: SessaoDep, _: SoImpressor):
+    """ACK de quem imprimiu: a comanda foi entregue à impressora.
 
     Existe por REST porque a impressão (fase 3) precisa funcionar antes do
     WebSocket (fase 4). Depois o agente pode mandar `ack.impresso` pelo socket
     — o efeito no banco é este mesmo.
+
+    **Quem chama hoje é o celular do balcão**, logo depois de despachar o cupom
+    pro RawBT. O agente do PC continua podendo chamar, e é por isso que os dois
+    não devem rodar juntos: o primeiro que confirmar tira a comanda da fila do
+    outro, mas na janela entre o papel e o ACK cada um imprimiria a sua via.
+
+    Uma ressalva que o nome do campo esconde: o Intent do Android não devolve
+    nada, então, vindo do celular, `impresso_em` quer dizer "foi mandado pra
+    impressora" e não "o papel está na bandeja". A diferença aparece com a
+    térmica desligada — a venda sai da fila sem ter saído no papel. Quem
+    percebe é o balcão, que tem a comanda na mão, e reimprime pela lista de
+    últimos pedidos.
     """
     pedido = await _buscar(sessao, pedido_id)
     if pedido.impresso_em is None:
@@ -187,17 +206,44 @@ async def mudar_status(
 
 @rotas.post("/{pedido_id}/cancelar", response_model=PedidoSaida)
 async def cancelar(
-    pedido_id: uuid.UUID, dados: CancelamentoEntrada, sessao: SessaoDep, dono: SoDono
+    pedido_id: uuid.UUID, dados: CancelamentoEntrada, sessao: SessaoDep, quem: SoCaixa
 ):
-    """Cancelamento é só do dono e exige motivo — é dinheiro saindo do caixa."""
+    """Tira a venda do caixa. Exige motivo — é dinheiro saindo.
+
+    **O balcão cancela o que o balcão vendeu, hoje.** É lá que o erro acontece
+    (pedido digitado errado, cliente que desistiu antes de pagar) e é lá que o
+    cliente está esperando; obrigar a chamar o dono deixaria a fila parada por
+    um engano de dez segundos.
+
+    Fora dessa janela — venda de outro atendente, venda de ontem — quem cancela
+    é o dono. Não é desconfiança do funcionário: é que qualquer um dos dois
+    casos significa que alguém está mexendo em movimento que já foi conferido,
+    e isso precisa passar por quem responde pelo caixa.
+
+    O que protege o dinheiro não é a dificuldade de cancelar, é o registro:
+    fica gravado o motivo e quem cancelou, o valor sai do faturamento e entra
+    na conta de cancelados, que aparece destacada no painel do dono.
+    """
     pedido = await _buscar(sessao, pedido_id)
 
     if pedido.status is StatusPedido.CANCELADO:
         raise HTTPException(status.HTTP_409_CONFLICT, "Pedido já está cancelado")
 
+    if quem.papel is not Papel.DONO:
+        if pedido.usuario_id != quem.usuario_id:
+            raise HTTPException(
+                status.HTTP_403_FORBIDDEN,
+                "Este pedido é de outro atendente — só o dono cancela",
+            )
+        if pedido.data_operacional != dia_atual():
+            raise HTTPException(
+                status.HTTP_403_FORBIDDEN,
+                "Pedido de outro dia — só o dono cancela",
+            )
+
     pedido.status = StatusPedido.CANCELADO
     pedido.cancelado_em = agora()
-    pedido.cancelado_por = dono.usuario_id
+    pedido.cancelado_por = quem.usuario_id
     pedido.motivo_cancelamento = dados.motivo
     await sessao.flush()
 

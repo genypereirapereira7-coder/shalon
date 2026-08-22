@@ -2,10 +2,17 @@
 
     python -m app.seed
 
-Idempotente: rodar de novo não duplica nada, e nunca sobrescreve preço que o
-dono já mudou pela tela — a única fonte de verdade depois da primeira carga é
-o banco. O que está aqui é o cardápio do folheto (agosto/2026); item novo ou
-preço novo entra pela tela do dono, não editando este arquivo.
+Idempotente: rodar de novo não duplica nada. O que está aqui é o cardápio do
+folheto (agosto/2026); item novo ou preço novo entra pela tela do dono, não
+editando este arquivo.
+
+**O que o seed sobrescreve e o que não.** Preço e ativo são do dono: ele os
+edita pela tela, e o seed nunca os toca de volta — seria o cardápio voltando
+sozinho ao preço de agosto toda vez que alguém reiniciasse o servidor. Já a
+*estrutura* — a ordem das opções e a cota de cada grupo ("escolha 1 cobertura")
+— não tem tela nenhuma que a edite: este arquivo é a única fonte, então ele
+sincroniza. Sem isso, mexer numa cota aqui não teria efeito em banco nenhum que
+já existisse, incluindo o de produção, e a mudança sumiria em silêncio.
 
 Um detalhe de modelagem que se paga na comanda: os cinco tamanhos de açaí
 montado apontam pro *mesmo* grupo de acompanhamentos. Mudar "Bis" de nome uma
@@ -26,11 +33,17 @@ from app.seguranca import gerar_hash
 
 cfg = get_config()
 
+# (nome, segredo, papel). O nome é o que se digita no login — sem lista, sem
+# escolher de quem é o botão.
+#
+# Sem conta de cozinha: a tela do PC saiu do sistema, e quem imprime a comanda
+# agora é o próprio celular que vendeu, pelo RawBT. Criar uma conta com PIN
+# 0000 que nenhuma tela usa é porta aberta sem porteiro.
 USUARIOS = [
-    # (nome, segredo, papel)
-    ("Dono", cfg.senha_dono, Papel.DONO),
-    ("João", "1234", Papel.FUNCIONARIO),
-    ("Cozinha", "0000", Papel.COZINHA),
+    ("Adriano", cfg.senha_dono, Papel.DONO),
+    ("Vanusa", cfg.senha_vendas, Papel.FUNCIONARIO),
+    # Conta de máquina: não entra por tela nenhuma, e o agente de PC só é usado
+    # por quem preferir a térmica presa a um computador.
     ("Agente de impressão", "0000", Papel.AGENTE),
 ]
 
@@ -41,6 +54,13 @@ USUARIOS = [
 
 GRUPOS = {
     "Coberturas": [
+        # Primeira da lista, e não a última: é a escolha mais rápida quando o
+        # cliente não quer cobertura, e ela precisa estar onde o dedo já está.
+        # Existir como opção — em vez de "é só não marcar nada" — é o que deixa
+        # a comanda dizer *sem cobertura* em letra impressa. Item que sai sem a
+        # linha da cobertura é item em que alguém esqueceu de perguntar, e
+        # quem monta não tem como saber a diferença.
+        ("Sem cobertura", 0),
         ("Morango", 0),
         ("Chocolate", 0),
         ("Caramelo", 0),
@@ -49,6 +69,14 @@ GRUPOS = {
         ("Kiwi", 0),
         ("Menta", 0),
         ("Limão", 0),
+    ],
+    # O que reveste a borda da casquinha/cascão trufado. Todas incluídas no
+    # preço: a borda não é adicional, é o que faz o item ser trufado.
+    "Bordas do trufado": [
+        ("Creme de avelã", 0),
+        ("Amendoim", 0),
+        ("Chocoball", 0),
+        ("Ovomaltine", 0),
     ],
     "Acompanhamentos do sundae": [
         ("Banana", 0),
@@ -126,7 +154,17 @@ GRUPOS = {
 
 # Atalhos pra montar os produtos: (nome do grupo, min, max). `max=None` é sem
 # teto — o caso dos adicionais pagos: leve quantos quiser, cada um cobrado.
-COBERTURA = ("Coberturas", 0, 1)
+
+# Exatamente uma, e obrigatória — com "Sem cobertura" na lista pra quem não
+# quer. Mínimo zero deixava o botão ADICIONAR liberado sem ninguém ter
+# perguntado nada, e a comanda saía muda sobre a cobertura: quem montava não
+# distinguia "o cliente não quis" de "o atendente passou reto".
+COBERTURA = ("Coberturas", 1, 1)
+
+# Mesma regra, pelo mesmo motivo: o trufado sempre tem uma borda, e qual é ela
+# é escolha do cliente. Sem obrigar, a comanda sairia sem dizer qual — e aí a
+# borda vira chute de quem está montando.
+BORDA = ("Bordas do trufado", 1, 1)
 SUNDAE_ACOMP = ("Acompanhamentos do sundae", 0, 3)
 SUNDAE_ADIC = ("Adicionais do sundae", 0, None)
 ACAI_ACOMP = ("Acompanhamentos do açaí montado", 0, 4)
@@ -155,10 +193,10 @@ CARDAPIO = [
         "Trufados",
         2,
         [
-            # Creme de avelã, amendoim, chocoball e ovomaltine já vão dentro —
-            # é o que faz o item ser trufado, não é escolha do cliente.
-            ("Casquinha Trufada", 1000, "#b07d4f", [COBERTURA]),
-            ("Cascão Trufado", 1300, "#b07d4f", [COBERTURA]),
+            # A borda vem primeiro na folha: é ela que define o item, e a
+            # cobertura é o acabamento por cima.
+            ("Casquinha Trufada", 1000, "#b07d4f", [BORDA, COBERTURA]),
+            ("Cascão Trufado", 1300, "#b07d4f", [BORDA, COBERTURA]),
         ],
     ),
     (
@@ -197,6 +235,9 @@ CARDAPIO = [
             ("Milk-shake 300ml", 1400, "#e0a96d", []),
             ("Milk-shake 500ml", 1600, "#e0a96d", []),
             ("Milk-shake 700ml", 1800, "#cf9450", []),
+            # Sabor fechado, tamanho único — por isso não entra na escada de
+            # 300/500/700 dos outros.
+            ("Milk-shake doce de café", 1800, "#cf9450", []),
         ],
     ),
     (
@@ -221,11 +262,15 @@ async def semear(detalhado: bool = True) -> None:
     """Popula usuários e cardápio. Idempotente.
 
     `detalhado=False` lista só o resumo. É o que o `dev.py` usa: na primeira
-    execução são 138 registros, e a lista inteira empurraria pra fora da tela
-    justamente os links que aquele script existe pra mostrar.
+    execução são mais de cem registros, e a lista inteira empurraria pra fora
+    da tela justamente os links que aquele script existe pra mostrar.
     """
     async with Sessao() as sessao:
         criados: list[str] = []
+        # Separado dos criados porque é outra coisa: aqui o registro já
+        # existia e o seed corrigiu a estrutura dele. Somar os dois num número
+        # só faria "3 registros criados" aparecer num banco onde nada nasceu.
+        ajustados: list[str] = []
 
         for nome, segredo, papel in USUARIOS:
             existente = (
@@ -235,8 +280,8 @@ async def semear(detalhado: bool = True) -> None:
                 sessao.add(Usuario(nome=nome, pin_hash=gerar_hash(segredo), papel=papel))
                 criados.append(f"usuário {nome} ({papel.value})")
 
-        grupos = await _semear_grupos(sessao, criados)
-        await _semear_produtos(sessao, grupos, criados)
+        grupos = await _semear_grupos(sessao, criados, ajustados)
+        await _semear_produtos(sessao, grupos, criados, ajustados)
 
         await sessao.commit()
 
@@ -252,7 +297,11 @@ async def semear(detalhado: bool = True) -> None:
         if detalhado:
             for item in criados:
                 print(f"  + {item}")
-    else:
+    if ajustados:
+        print(f"seed:    {len(ajustados)} ajustes de estrutura")
+        for item in ajustados:
+            print(f"  ~ {item}")
+    if not criados and not ajustados:
         print("seed:    nada a fazer, banco já semeado")
 
     print("\nUsuários:")
@@ -260,13 +309,20 @@ async def semear(detalhado: bool = True) -> None:
     for linha in linhas:
         print(linha)
 
-    if not cfg.producao and cfg.senha_dono == "shalon123":
-        print("\n  ATENÇÃO: senha do dono é a padrão. Defina SHALON_SENHA_DONO antes de subir.")
+    if cfg.producao:
+        return
+
+    print(
+        "\n  As senhas vem do config.py (SHALON_SENHA_DONO / SHALON_SENHA_VENDAS)."
+        "\n  Troque-as antes de expor o sistema fora da loja."
+    )
 
 
 # ------------------------------------------------------------------ internos
 
-async def _semear_grupos(sessao, criados: list[str]) -> dict[str, OpcaoGrupo]:
+async def _semear_grupos(
+    sessao, criados: list[str], ajustados: list[str]
+) -> dict[str, OpcaoGrupo]:
     """Cria os grupos e suas opções. Devolve os grupos por nome."""
     encontrados: dict[str, OpcaoGrupo] = {}
 
@@ -280,30 +336,37 @@ async def _semear_grupos(sessao, criados: list[str]) -> dict[str, OpcaoGrupo]:
             await sessao.flush()
             criados.append(f"grupo {nome_grupo}")
 
-        # Opção existente não é tocada: se o dono mudou o preço da geléia, quem
-        # manda é o banco. O seed só acrescenta o que falta.
+        # O preço de uma opção existente não é tocado: se o dono mudou o valor
+        # da geléia, quem manda é o banco. A **ordem**, sim — ela não tem tela
+        # que a edite, e sem sincronizar aqui uma opção nova inserida no meio da
+        # lista nasceria empatada com a que já ocupava aquele lugar, saindo em
+        # posição imprevisível na folha de escolhas.
         #
         # Consulta direta em vez de `grupo.opcoes`: grupo recém-criado tem a
         # coleção não carregada, e lê-la aqui dispararia lazy load fora do
         # greenlet — o seed morreria na primeira carga, que é justamente a única
         # vez em que ele importa.
-        existentes = set(
-            (
-                await sessao.execute(select(Opcao.nome).where(Opcao.grupo_id == grupo.id))
+        existentes = {
+            o.nome: o
+            for o in (
+                await sessao.execute(select(Opcao).where(Opcao.grupo_id == grupo.id))
             ).scalars()
-        )
+        }
         for i, (nome_opcao, extra) in enumerate(opcoes):
-            if nome_opcao in existentes:
-                continue
-            sessao.add(
-                Opcao(
-                    grupo_id=grupo.id,
-                    nome=nome_opcao,
-                    preco_extra_centavos=extra,
-                    ordem=i,
+            existente = existentes.get(nome_opcao)
+            if existente is None:
+                sessao.add(
+                    Opcao(
+                        grupo_id=grupo.id,
+                        nome=nome_opcao,
+                        preco_extra_centavos=extra,
+                        ordem=i,
+                    )
                 )
-            )
-            criados.append(f"opção {nome_grupo}: {nome_opcao}")
+                criados.append(f"opção {nome_grupo}: {nome_opcao}")
+            elif existente.ordem != i:
+                existente.ordem = i
+                ajustados.append(f"opção {nome_grupo}: {nome_opcao} → posição {i}")
 
         encontrados[nome_grupo] = grupo
 
@@ -311,7 +374,12 @@ async def _semear_grupos(sessao, criados: list[str]) -> dict[str, OpcaoGrupo]:
     return encontrados
 
 
-async def _semear_produtos(sessao, grupos: dict[str, OpcaoGrupo], criados: list[str]) -> None:
+async def _semear_produtos(
+    sessao,
+    grupos: dict[str, OpcaoGrupo],
+    criados: list[str],
+    ajustados: list[str],
+) -> None:
     for nome_cat, ordem_cat, produtos in CARDAPIO:
         categoria = (
             await sessao.execute(select(Categoria).where(Categoria.nome == nome_cat))
@@ -349,6 +417,18 @@ async def _semear_produtos(sessao, grupos: dict[str, OpcaoGrupo], criados: list[
                     )
                 ).scalar_one_or_none()
                 if ja_ligado is not None:
+                    # A cota mora só aqui — nenhuma tela a edita. Corrigir o
+                    # vínculo existente é o que faz mudar `COBERTURA` neste
+                    # arquivo valer também nos bancos que já rodam.
+                    atual = (ja_ligado.min_escolhas, ja_ligado.max_escolhas, ja_ligado.ordem)
+                    if atual != (minimo, maximo, ordem_v):
+                        ja_ligado.min_escolhas = minimo
+                        ja_ligado.max_escolhas = maximo
+                        ja_ligado.ordem = ordem_v
+                        ajustados.append(
+                            f"{nome_prod}: {nome_grupo} agora "
+                            f"{minimo}–{maximo if maximo is not None else '∞'}"
+                        )
                     continue
                 sessao.add(
                     ProdutoOpcaoGrupo(

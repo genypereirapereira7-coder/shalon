@@ -15,7 +15,10 @@ PADRAO = "config.ini"
 @dataclass(frozen=True)
 class Config:
     url: str
-    usuario_id: int
+    # O nome de usuário, não o id: o login do backend é por nome, e um número
+    # que só aparece dentro do banco era a pior coisa possível pra pedir a
+    # quem instala o agente com o Bloco de Notas aberto.
+    usuario: str
     pin: str
 
     impressora: str
@@ -23,9 +26,6 @@ class Config:
 
     fuso: str = "America/Sao_Paulo"
     largura: int = 48
-
-    abrir_cozinha: bool = False
-    navegador: str = ""
 
     @property
     def url_ws(self) -> str:
@@ -39,10 +39,6 @@ class Config:
         if base.startswith("https://"):
             return "wss://" + base[len("https://") :] + "/ws"
         return "ws://" + base.removeprefix("http://") + "/ws"
-
-    @property
-    def url_cozinha(self) -> str:
-        return self.url.rstrip("/") + "/cozinha/"
 
 
 def carregar(caminho: str | Path = PADRAO) -> Config:
@@ -58,15 +54,14 @@ def carregar(caminho: str | Path = PADRAO) -> Config:
     servidor = ini["servidor"] if ini.has_section("servidor") else {}
     impressora = ini["impressora"] if ini.has_section("impressora") else {}
     loja = ini["loja"] if ini.has_section("loja") else {}
-    tela = ini["cozinha"] if ini.has_section("cozinha") else {}
 
-    faltando = [c for c in ("url", "usuario_id", "pin") if not servidor.get(c)]
+    faltando = [c for c in ("url", "usuario", "pin") if not servidor.get(c)]
     if faltando:
         raise SystemExit(f"config.ini: falta {', '.join(faltando)} na seção [servidor]")
 
     return Config(
         url=servidor.get("url").strip(),
-        usuario_id=int(servidor.get("usuario_id")),
+        usuario=servidor.get("usuario").strip(),
         pin=servidor.get("pin").strip(),
         impressora=impressora.get("tipo", "fake").strip(),
         # Tudo que não é `tipo` vai pro driver escolhido. Assim uma impressora
@@ -74,6 +69,4 @@ def carregar(caminho: str | Path = PADRAO) -> Config:
         opcoes_impressora={c: v for c, v in impressora.items() if c != "tipo"},
         fuso=loja.get("fuso", "America/Sao_Paulo").strip(),
         largura=int(loja.get("largura", 48)),
-        abrir_cozinha=tela.get("abrir", "nao").strip().lower() in {"sim", "s", "yes", "true", "1"},
-        navegador=tela.get("navegador", "").strip(),
     )

@@ -1,5 +1,5 @@
 /**
- * PWA de Vendas — a tela que o funcionário usa no balcão.
+ * PWA de Vendas — a tela que o funcionário usa no balcão, num celular.
  *
  * O fio condutor: **apertar ENVIAR nunca falha na frente do cliente**. O
  * pedido vai pro IndexedDB (`fila.js`), o carrinho limpa na hora e a subida
@@ -8,12 +8,19 @@
  *
  * Por isso o cardápio também fica em cache: a tela precisa abrir e vender
  * mesmo que a primeira coisa que aconteça no dia seja a internet cair.
+ *
+ * **A comanda sai deste mesmo aparelho.** Assim que o servidor confirma a
+ * venda, o texto do cupom é despachado pro RawBT por um Intent do Android e o
+ * papel sai sem ninguém apertar nada (`impressao.js`). Este arquivo não sabe
+ * formatar cupom nem falar com o Android — ele só diz *quando* a venda ficou
+ * pronta.
  */
 
 import * as api from "../comum/api.js";
 import { reais, valor, hora, plural } from "../comum/formato.js";
 import * as ws from "../comum/ws.js";
 import * as fila from "./fila.js";
+import { criarImpressora } from "./impressao.js";
 
 const CHAVE_CARDAPIO = "shalon.cardapio";
 const INTERVALO_SINCRONIA_MS = 15000;
@@ -33,7 +40,10 @@ const estado = {
   opcoes: new Map(),
   /** Produto sendo montado na folha de acompanhamentos, ou null */
   escolha: null,
-  usuarioEscolhido: null,
+  /** Registro na folha de exclusão, ou null */
+  excluindo: null,
+  /** Motivo marcado nos botões da folha de exclusão */
+  motivoEscolhido: null,
   sincronizando: false,
   /** false depois de uma falha de rede; o pontinho do topo vive disto */
   online: navigator.onLine,
@@ -43,6 +53,17 @@ const estado = {
 };
 
 const $ = (id) => document.getElementById(id);
+
+/**
+ * A impressora do balcão.
+ *
+ * Criada aqui, uma vez, com as dependências padrão (RawBT + layout do
+ * `comanda.js`). Trocar o aplicativo de impressão é trocar o que entra nesta
+ * chamada — nada mais neste arquivo muda.
+ */
+const impressora = criarImpressora({
+  aoMudar: ({ pendentes, ultimoErro }) => atualizarFaixaImpressao(pendentes, ultimoErro),
+});
 
 // ==================================================================== início
 
@@ -61,7 +82,10 @@ async function iniciar() {
     mostrarLogin();
   }
 
-  setInterval(sincronizar, INTERVALO_SINCRONIA_MS);
+  setInterval(() => {
+    sincronizar();
+    impressora.retomar();
+  }, INTERVALO_SINCRONIA_MS);
   fila.limparAntigos().catch(() => {});
 }
 
@@ -75,69 +99,22 @@ function registrarServiceWorker() {
 
 // ===================================================================== login
 
-async function mostrarLogin() {
+function mostrarLogin() {
   fecharEscolhas();
   $("tela-venda").hidden = true;
   $("tela-login").hidden = false;
-  $("login-pin").hidden = true;
-  $("login-lista").hidden = false;
-  await carregarUsuarios();
-}
-
-async function carregarUsuarios() {
-  const lista = $("usuarios");
-  const carregando = $("login-carregando");
-  const recarregar = $("login-recarregar");
-
-  lista.innerHTML = "";
-  carregando.hidden = false;
-  carregando.textContent = "Carregando…";
-  recarregar.hidden = true;
-
-  try {
-    const usuarios = await api.usuarios();
-    carregando.hidden = true;
-
-    for (const usuario of usuarios) {
-      const botao = document.createElement("button");
-      botao.innerHTML =
-        `<span>${escapar(usuario.nome)}</span>` +
-        `<span class="papel">${escapar(usuario.papel.toLowerCase())}</span>`;
-      botao.onclick = () => escolherUsuario(usuario);
-      lista.append(botao);
-    }
-
-    if (!usuarios.length) {
-      carregando.hidden = false;
-      carregando.textContent = "Nenhum usuário cadastrado. Rode o seed no servidor.";
-    }
-  } catch (erro) {
-    carregando.hidden = false;
-    carregando.textContent =
-      erro instanceof api.ErroRede
-        ? "Sem conexão com o servidor."
-        : `Não deu pra carregar: ${erro.message}`;
-    recarregar.hidden = false;
-  }
-}
-
-function escolherUsuario(usuario) {
-  estado.usuarioEscolhido = usuario;
-  $("pin-nome").textContent = usuario.nome;
-  $("pin-campo").value = "";
   $("login-erro").hidden = true;
-  $("login-lista").hidden = true;
-  $("login-pin").hidden = false;
+  $("login-senha").value = "";
 }
 
 async function entrar() {
-  const campo = $("pin-campo");
-  const segredo = campo.value.trim();
+  const usuario = $("login-usuario").value.trim();
+  const senha = $("login-senha").value;
   const erroEl = $("login-erro");
-  const botao = $("pin-entrar");
+  const botao = $("login-entrar");
 
-  if (segredo.length < 4) {
-    erroEl.textContent = "O PIN tem pelo menos 4 dígitos";
+  if (!usuario || !senha) {
+    erroEl.textContent = "Preencha usuário e senha";
     erroEl.hidden = false;
     return;
   }
@@ -147,8 +124,10 @@ async function entrar() {
   erroEl.hidden = true;
 
   try {
-    await api.entrar(estado.usuarioEscolhido.id, segredo);
-    campo.value = "";
+    await api.entrar(usuario, senha);
+    // Só a senha some. O nome fica: é o mesmo aparelho e a mesma pessoa toda
+    // manhã, e limpar os dois faria digitar duas coisas onde uma bastava.
+    $("login-senha").value = "";
     await abrirVenda();
   } catch (erro) {
     erroEl.textContent =
@@ -156,7 +135,8 @@ async function entrar() {
         ? "Sem conexão — não dá pra entrar agora."
         : erro.message;
     erroEl.hidden = false;
-    campo.value = "";
+    $("login-senha").value = "";
+    $("login-senha").focus();
   } finally {
     botao.disabled = false;
     botao.textContent = "ENTRAR";
@@ -179,12 +159,33 @@ async function abrirVenda() {
   }
 
   atualizarCarrinho();
-  await atualizarFaixaFila();
-  // Silencioso: entrar no app não é hora de aviso: os produtos aparecendo na
-  // tela já dizem que deu certo. O toque em "Atualizar cardápio" é que fala.
+
+  // O cardápio primeiro, e sem esperar por mais nada: é ele que deixa a tela
+  // vendável, e tudo que vem depois é aviso. Quando isto vinha por último, uma
+  // falha ao ler a fila do IndexedDB matava a função no meio e a tela ficava
+  // em "Carregando cardápio…" pra sempre — sem erro visível, e culpando a
+  // parte errada do app.
+  //
+  // Silencioso: entrar no app não é hora de aviso. Os produtos aparecendo na
+  // tela já dizem que deu certo; o toque em "Atualizar cardápio" é que fala.
   baixarCardapio({ silencioso: true });
-  sincronizar();
   ligarSocket();
+
+  // Comanda que ficou de ontem, ou de antes do app ser fechado: a fila mora no
+  // localStorage e sobrevive ao recarregamento, então a faixa precisa aparecer
+  // já na abertura, e não só na próxima venda.
+  atualizarFaixaImpressao(impressora.pendentes(), null);
+  impressora.retomar();
+
+  try {
+    await atualizarFaixaFila();
+    sincronizar();
+  } catch (erro) {
+    // Sem a fila local dá pra vender online, e não dá pra vender offline. Quem
+    // está no balcão precisa saber disso agora, não na primeira queda de sinal.
+    console.error("fila local indisponível:", erro);
+    mostrarErro("Fila offline indisponível neste aparelho — venda só com internet");
+  }
 }
 
 // ================================================================ tempo real
@@ -329,7 +330,12 @@ function desenharProdutos() {
     const escolhas = (produto.grupos ?? []).length;
     botao.innerHTML =
       `<span class="produto__nome">${escapar(produto.nome)}</span>` +
-      `<span class="produto__preco">R$ ${valor(produto.preco_centavos)}` +
+      `<span class="produto__preco">` +
+      // O valor num elemento próprio, e não solto no flex: como nó de texto
+      // anônimo ele quebrava entre o "R$" e o número num aparelho estreito, e
+      // preço partido em duas linhas é o número que o funcionário confere na
+      // frente do cliente.
+      `<span class="produto__valor">R$ ${valor(produto.preco_centavos)}</span>` +
       (escolhas ? '<span class="produto__marca">+ escolhas</span>' : "") +
       `</span>` +
       (quantidade ? `<span class="produto__qtd">${quantidade}</span>` : "");
@@ -486,18 +492,27 @@ function desenharEscolhas() {
   const area = $("escolhas-grupos");
   area.innerHTML = "";
 
-  let faltando = false;
+  /**
+   * O primeiro grupo obrigatório que ainda não foi atendido, ou null.
+   *
+   * É o nome dele, e não um booleano, porque o botão travado precisa dizer o
+   * que falta: a folha do trufado tem dois grupos e rola, então "ADICIONAR
+   * apagado" sozinho manda o funcionário procurar o que está errado com o
+   * cliente esperando.
+   */
+  let pendente = null;
 
   for (const grupo of produto.grupos) {
     const marcadas = grupo.opcoes.filter((o) => selecionadas.has(o.id)).length;
     const cheio = grupo.max_escolhas !== null && marcadas >= grupo.max_escolhas;
-    if (marcadas < grupo.min_escolhas) faltando = true;
+    if (pendente === null && marcadas < grupo.min_escolhas) pendente = grupo.nome;
 
     const bloco = document.createElement("section");
     bloco.className = "grupo";
     bloco.innerHTML =
       `<p class="grupo__titulo">${escapar(grupo.nome)}` +
-      `<span class="grupo__cota">${escapar(textoCota(grupo, marcadas))}</span></p>` +
+      `<span class="grupo__cota" data-obrigatorio="${marcadas < grupo.min_escolhas ? 1 : 0}">` +
+      `${escapar(textoCota(grupo, marcadas))}</span></p>` +
       `<div class="grupo__opcoes"></div>`;
 
     const opcoes = bloco.querySelector(".grupo__opcoes");
@@ -526,12 +541,18 @@ function desenharEscolhas() {
     [...selecionadas].reduce((soma, id) => soma + (estado.opcoes.get(id)?.preco_extra_centavos ?? 0), 0);
 
   $("escolhas-total").textContent = reais(total);
-  $("escolhas-add").disabled = faltando;
+  $("escolhas-add").disabled = pendente !== null;
+  $("escolhas-rotulo").textContent = pendente ? `FALTA: ${pendente}` : "ADICIONAR";
 }
 
 function textoCota(grupo, marcadas) {
   if (grupo.max_escolhas === null) {
     return marcadas ? `${marcadas} adicional${marcadas > 1 ? "is" : ""}` : "opcional, cobrado à parte";
+  }
+  // Grupo obrigatório ainda em aberto: o `0/1` seco não diz que é obrigatório,
+  // e é justamente ele que está segurando o botão lá embaixo.
+  if (marcadas < grupo.min_escolhas) {
+    return `escolha ${grupo.min_escolhas}`;
   }
   return `${marcadas}/${grupo.max_escolhas}`;
 }
@@ -631,6 +652,14 @@ async function enviarUm(registro, { avisar = false } = {}) {
 
     if (avisar) aviso(`Pedido #${resposta.numero_dia} enviado`, "ok");
 
+    // O papel sai agora. Este é o primeiro instante em que existe `numero_dia`,
+    // e é ele que casa a comanda com o pedido do balcão.
+    //
+    // `duplicado` fica de fora: é o reenvio do mesmo `id_cliente` devolvendo o
+    // pedido que já existe, e imprimir de novo desfaria exatamente o que a
+    // idempotência do servidor está lá pra evitar.
+    if (!resposta.duplicado) await impressora.imprimir(resposta);
+
     // O celular calculou um total diferente do servidor: o cache do cardápio
     // está velho. O pedido vale — mas o preço na tela precisa ser corrigido
     // antes da próxima venda.
@@ -718,6 +747,43 @@ async function atualizarFaixaFila() {
   faixa.hidden = false;
 }
 
+/**
+ * A faixa de "comanda sem papel".
+ *
+ * Separada da fila de envio de propósito: ali a venda ainda não chegou no
+ * caixa; aqui ela já chegou e o que faltou foi o papel. São dois problemas
+ * diferentes, com duas saídas diferentes — e uma faixa só, somando os dois,
+ * faria o funcionário conferir o lugar errado.
+ */
+function atualizarFaixaImpressao(pendentes, ultimoErro) {
+  const faixa = $("faixa-impressao");
+
+  faixa.hidden = pendentes === 0;
+  if (pendentes) {
+    faixa.textContent =
+      `🖨 ${plural(pendentes, "comanda não saiu", "comandas não saíram")}` +
+      `${ultimoErro ? ` (${ultimoErro})` : ""} — toque pra tentar de novo`;
+  }
+
+  $("btn-imprimir-fila").hidden = pendentes === 0;
+  $("btn-descartar-impressao").hidden = pendentes === 0;
+  if (!$("painel-usuario").hidden) descreverImpressora();
+}
+
+function descreverImpressora() {
+  const pendentes = impressora.pendentes();
+  $("painel-impressora").textContent = impressora.disponivel()
+    ? `Impressão: RawBT neste aparelho${pendentes ? ` · ${pendentes} na fila` : ""}`
+    : "Impressão: indisponível — o RawBT só funciona no Android";
+}
+
+/** Tenta despachar o que ficou pra trás. Nunca levanta: é botão de balcão. */
+async function tentarImprimirPendentes() {
+  aviso("Mandando pra impressora…");
+  await impressora.retomar();
+  if (impressora.pendentes() === 0) aviso("Comandas impressas", "ok");
+}
+
 function mostrarErro(texto) {
   const faixa = $("faixa-erro");
   faixa.textContent = `⚠ ${texto}`;
@@ -735,6 +801,7 @@ function abrirPainel(qual) {
   if (qual === "usuario") {
     const sessao = api.sessaoAtual();
     $("painel-usuario-nome").textContent = `${sessao?.nome ?? ""} · ${sessao?.papel ?? ""}`;
+    descreverImpressora();
   } else {
     desenharRecentes();
   }
@@ -762,12 +829,134 @@ async function desenharRecentes() {
       `<span class="num">${numero}</span>` +
       `<span class="quando">${hora(registro.criado_em_cliente)} · ` +
       `${reais(registro.total_servidor ?? registro.total_centavos)}</span>` +
-      `<span class="selo" data-status="${registro.status}">${registro.status}</span>`;
+      `<span class="selo" data-status="${registro.status}">${registro.status}</span>` +
+      // Só o que já subiu tem `pedido`: comanda precisa de `numero_dia`, e
+      // quem numera é o servidor.
+      // Texto e não ícone: o glifo de impressora (U+2399) não existe em toda
+      // fonte de Android, e um quadradinho vazio no lugar do botão é um botão
+      // que ninguém aperta.
+      (registro.pedido && registro.status !== "CANCELADO"
+        ? '<button class="recentes__via" data-via>2ª via</button>'
+        : "") +
+      // Venda já cancelada não tem o que excluir de novo.
+      (registro.status === "CANCELADO"
+        ? ""
+        : '<button class="recentes__x" data-excluir aria-label="Excluir esta venda">✕</button>');
 
     if (registro.status === "RECUSADO" && registro.erro) {
       li.title = registro.erro;
     }
+    if (registro.status === "CANCELADO" && registro.motivo_cancelamento) {
+      li.title = registro.motivo_cancelamento;
+    }
+    li.querySelector("[data-via]")?.addEventListener("click", () => reimprimir(registro));
+    li.querySelector("[data-excluir]")?.addEventListener("click", () => abrirExcluir(registro));
     lista.append(li);
+  }
+}
+
+/**
+ * Outra via de um pedido que já subiu.
+ *
+ * Sai marcada como REIMPRESSÃO: papel repetido sem aviso é pedido montado duas
+ * vezes. E é reconstruída do `PedidoSaida` guardado na fila — o mesmo objeto
+ * que gerou a primeira via, com os preços da hora da venda.
+ */
+async function reimprimir(registro) {
+  vibrar(12);
+  aviso(`Reimprimindo #${registro.numero_dia}…`);
+  await impressora.imprimir(registro.pedido, { reimpressao: true });
+}
+
+// ================================================================== excluir
+
+/**
+ * Desfazer uma venda.
+ *
+ * São dois caminhos, e a diferença importa: o pedido que **já subiu** vira um
+ * cancelamento no servidor — com motivo, autor e o valor saindo do faturamento
+ * —, enquanto o que ainda não subiu é só apagado daqui, porque nunca chegou a
+ * existir pra ninguém além deste aparelho.
+ *
+ * A folha existe em vez de um "toque duas vezes" porque aqui o toque errado
+ * não é reversível: cancelamento não se desfaz, e o dono vai ler o motivo no
+ * fim do dia pra entender por que o total não bate com a gaveta.
+ */
+function abrirExcluir(registro) {
+  estado.excluindo = registro;
+  estado.motivoEscolhido = null;
+
+  const numero = registro.numero_dia ? `o pedido #${registro.numero_dia}` : "este pedido";
+  $("excluir-numero").textContent = numero;
+  $("excluir-resumo").textContent =
+    `${hora(registro.criado_em_cliente)} · ` +
+    `${reais(registro.total_servidor ?? registro.total_centavos)}` +
+    (registro.status === "ENVIADO" ? "" : " · ainda não subiu pro servidor");
+
+  $("excluir-outro").value = "";
+  for (const botao of document.querySelectorAll(".excluir__motivo")) {
+    botao.dataset.marcado = "0";
+  }
+  $("excluir-confirmar").disabled = true;
+  $("excluir").hidden = false;
+}
+
+function fecharExcluir() {
+  $("excluir").hidden = true;
+  estado.excluindo = null;
+  estado.motivoEscolhido = null;
+}
+
+function escolherMotivo(botao) {
+  estado.motivoEscolhido = botao.dataset.motivo;
+  for (const outro of document.querySelectorAll(".excluir__motivo")) {
+    outro.dataset.marcado = outro === botao ? "1" : "0";
+  }
+  $("excluir-confirmar").disabled = false;
+  vibrar(10);
+}
+
+/** O motivo que vai pro servidor: o botão marcado, mais o texto livre. */
+function motivoFinal() {
+  const extra = $("excluir-outro").value.trim();
+  if (!estado.motivoEscolhido) return extra;
+  return extra ? `${estado.motivoEscolhido} — ${extra}` : estado.motivoEscolhido;
+}
+
+async function confirmarExclusao() {
+  const registro = estado.excluindo;
+  if (!registro) return;
+
+  const motivo = motivoFinal();
+  const botao = $("excluir-confirmar");
+  botao.disabled = true;
+  botao.textContent = "EXCLUINDO…";
+
+  try {
+    if (registro.status === "ENVIADO" && registro.id_servidor) {
+      await api.pedir("POST", `/pedidos/${registro.id_servidor}/cancelar`, { motivo });
+      await fila.marcarCancelado(registro.id_cliente, motivo);
+      aviso(`Pedido #${registro.numero_dia} excluído — valor fora do caixa`, "ok");
+    } else {
+      // Nunca chegou no servidor: não há caixa de onde tirar, e guardar um
+      // registro cancelado de uma venda que ninguém viu só ocuparia a lista.
+      await fila.descartar(registro.id_cliente);
+      aviso("Pedido apagado", "ok");
+    }
+
+    fecharExcluir();
+    await desenharRecentes();
+    await atualizarFaixaFila();
+  } catch (erro) {
+    aviso(
+      erro instanceof api.ErroRede
+        ? "Sem conexão — o pedido continua valendo. Tente de novo."
+        : erro.message,
+      "erro",
+    );
+  } finally {
+    botao.disabled = false;
+    botao.textContent = "EXCLUIR A VENDA";
   }
 }
 
@@ -798,30 +987,12 @@ async function sair() {
 
 function ligarEventos() {
   // --- login
-  $("login-recarregar").onclick = carregarUsuarios;
-  $("pin-voltar").onclick = () => {
-    $("login-pin").hidden = true;
-    $("login-lista").hidden = false;
-  };
-  $("pin-entrar").onclick = entrar;
-  $("pin-campo").addEventListener("keydown", (e) => {
-    if (e.key === "Enter") entrar();
+  // `submit` e não o clique do botão: é o que faz o "ir" do teclado do celular
+  // entrar, em vez de o funcionário ter que fechar o teclado pra achar o botão.
+  $("login-form").addEventListener("submit", (e) => {
+    e.preventDefault();
+    entrar();
   });
-
-  for (const tecla of document.querySelectorAll(".teclado__t")) {
-    tecla.onclick = () => {
-      const campo = $("pin-campo");
-      if (tecla.dataset.digito) campo.value += tecla.dataset.digito;
-      else if (tecla.dataset.acao === "apagar") campo.value = campo.value.slice(0, -1);
-      else if (tecla.dataset.acao === "letras") {
-        // O dono entra com senha, não com PIN de quatro dígitos.
-        campo.type = "text";
-        campo.inputMode = "text";
-        campo.focus();
-      }
-      vibrar(8);
-    };
-  }
 
   // --- venda
   $("carrinho-alca").onclick = () => {
@@ -852,6 +1023,27 @@ function ligarEventos() {
     await sincronizar();
   };
 
+  // --- impressão
+  $("faixa-impressao").onclick = tentarImprimirPendentes;
+  $("btn-imprimir-fila").onclick = tentarImprimirPendentes;
+  $("btn-descartar-impressao").onclick = () => {
+    impressora.descartar();
+    aviso("Fila de impressão limpa");
+  };
+
+  // --- excluir venda
+  for (const botao of document.querySelectorAll(".excluir__motivo")) {
+    botao.onclick = () => escolherMotivo(botao);
+  }
+  // O texto livre sozinho também serve de motivo — o servidor exige 3 letras.
+  $("excluir-outro").addEventListener("input", () => {
+    $("excluir-confirmar").disabled = motivoFinal().trim().length < 3;
+  });
+  $("excluir-confirmar").onclick = confirmarExclusao;
+  for (const alvo of document.querySelectorAll("[data-fechar-excluir]")) {
+    alvo.onclick = fecharExcluir;
+  }
+
   for (const alvo of document.querySelectorAll("[data-fechar]")) {
     alvo.onclick = fecharPainel;
   }
@@ -864,9 +1056,13 @@ function ligarEventos() {
   window.addEventListener("offline", () => marcarOnline(false));
 
   // Voltar pro app depois de trocar de janela é o momento mais provável de a
-  // conexão ter voltado.
+  // conexão ter voltado — e é também a única hora em que um Intent volta a
+  // funcionar: Android nenhum abre o RawBT a partir de uma aba em segundo
+  // plano, então é aqui que a comanda atrasada consegue sair.
   document.addEventListener("visibilitychange", () => {
-    if (!document.hidden) sincronizar();
+    if (document.hidden) return;
+    sincronizar();
+    impressora.retomar();
   });
 }
 

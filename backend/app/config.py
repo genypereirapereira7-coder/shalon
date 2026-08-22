@@ -17,8 +17,15 @@ class Config(BaseSettings):
     jwt_segredo: str = "dev-inseguro-troque-em-producao"
     jwt_algoritmo: str = "HS256"
     acesso_expira_min: int = 30          # token curto, renovado pelo refresh
-    refresh_expira_dias: int = 60        # o celular da loja não pode deslogar no meio do expediente
-    login_max_tentativas: int = 5        # PIN de 4 dígitos é fraco: a trava é aqui, não no bcrypt
+
+    # Um ano, e deslizante: cada renovação abre uma sessão nova com o prazo
+    # cheio. Na prática a senha é digitada uma vez e nunca mais, que é o que o
+    # balcão precisa — funcionário deslogado no meio de um sábado é fila
+    # parada. Quem tira o acesso de alguém é o dono, pela tela de sessões
+    # (`/auth/sessoes`), e não o relógio.
+    refresh_expira_dias: int = 365
+
+    login_max_tentativas: int = 5        # a trava é aqui, não no bcrypt
     login_bloqueio_seg: int = 300
 
     # Dia operacional — o fuso PRECISA ser explícito: a VPS roda em UTC e a
@@ -35,7 +42,11 @@ class Config(BaseSettings):
     # Onde ficam os PWAs; em dev o próprio FastAPI serve os arquivos.
     dir_frontend: str = "../frontend"
 
-    senha_dono: str = "shalon123"  # usada só pelo seed inicial
+    # Usadas só pelo seed inicial. Ficam aqui como padrão pra que a loja
+    # funcione sem ninguém decorar variável de ambiente — e continuam sendo
+    # variáveis pra que trocar a senha não exija editar código.
+    senha_dono: str = "adriano212121"
+    senha_vendas: str = "shalon691040"
 
     @property
     def tz(self) -> ZoneInfo:

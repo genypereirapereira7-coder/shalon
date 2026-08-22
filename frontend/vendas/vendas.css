@@ -1,4 +1,13 @@
-/* Tela de venda: uma tela só, polegar direito, uma mão. */
+/*
+ * Tela de venda: uma tela só, polegar direito, uma mão.
+ *
+ * Celular e nada mais. Não existe aqui variante de tablet nem de desktop: a
+ * grade de produtos, o carrinho que sobe de baixo e a folha de acompanhamentos
+ * são desenhos de tela estreita, e mantê-los funcionando também em duas colunas
+ * era um segundo layout pra conferir a cada mexida — num aparelho que ninguém
+ * usa. Aberto numa tela larga, o app fica na coluna que o `comum/estilo.css`
+ * define.
+ */
 
 /* ------------------------------------------------------------------ login */
 
@@ -8,9 +17,14 @@
   align-items: center;
   justify-content: center;
   gap: 20px;
-  min-height: 100%;
+  /* Altura fixa com rolagem própria: num celular pequeno o teclado numérico
+     não cabe inteiro, e com `min-height` quem rolaria seria a página — que
+     está travada. */
+  height: 100%;
+  overflow-y: auto;
   padding: calc(24px + var(--seguro-topo)) 20px calc(24px + var(--seguro-baixo));
   background: var(--rosa-fundo);
+  -webkit-overflow-scrolling: touch;
 }
 
 .login__marca {
@@ -35,80 +49,47 @@
   text-align: center;
 }
 
-.login__usuarios {
-  display: grid;
-  gap: 10px;
-}
-
-.login__usuarios button {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  min-height: 60px;
-  padding: 0 18px;
-  border: 2px solid var(--rosa-claro);
-  border-radius: var(--raio);
-  background: var(--rosa-fundo);
-  font-size: 18px;
-  font-weight: 700;
-}
-
-.login__usuarios button:active {
-  background: var(--rosa-claro);
-}
-
-.login__usuarios .papel {
+.login__papel {
+  margin: -8px 0 0;
+  color: var(--tinta-fraca);
   font-size: 13px;
   font-weight: 600;
-  color: var(--tinta-fraca);
-  text-transform: lowercase;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
 }
 
-.login__voltar {
-  margin-bottom: 8px;
+.login__rotulo {
+  display: block;
+  margin-bottom: 6px;
   color: var(--tinta-fraca);
-  font-weight: 600;
+  font-size: 13px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
 }
 
-.login__pin {
+/* 18px e não menos: abaixo de 16px o iOS dá zoom sozinho ao focar o campo, e a
+   tela fica torta no meio do login. */
+.login__campo {
   width: 100%;
-  height: 60px;
+  min-height: 56px;
   margin-bottom: 16px;
   padding: 0 16px;
   border: 2px solid var(--linha);
   border-radius: var(--raio);
   background: var(--fundo);
-  font-size: 30px;
-  letter-spacing: 12px;
-  text-align: center;
+  font-size: 18px;
 }
 
-.login__pin:focus {
+.login__campo:focus {
   outline: none;
   border-color: var(--rosa);
 }
 
-.teclado {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 10px;
-}
-
-.teclado__t {
-  min-height: 62px;
-  border-radius: var(--raio);
-  background: var(--fundo);
-  font-size: 26px;
-  font-weight: 700;
-}
-
-.teclado__t:active {
-  background: var(--rosa-claro);
-}
-
-.teclado__t--fraco {
-  font-size: 20px;
-  color: var(--tinta-fraca);
+.login__nota {
+  margin: 0;
+  font-size: 13px;
+  text-align: center;
 }
 
 .login__erro {
@@ -247,20 +228,30 @@
   display: flex;
   align-items: baseline;
   justify-content: space-between;
-  gap: 6px;
+  /* Num aparelho estreito o preço e a marca não cabem lado a lado. Quem desce
+     é a marca — o preço fica sempre inteiro na primeira linha. */
+  flex-wrap: wrap;
+  gap: 2px 6px;
   font-size: 18px;
   font-weight: 800;
   color: var(--rosa);
 }
 
+.produto__valor {
+  white-space: nowrap;
+}
+
 /* Avisa que o toque abre a folha de acompanhamentos em vez de cair direto no
    carrinho — senão o funcionário aperta duas vezes achando que não pegou. */
 .produto__marca {
+  /* `auto` pra continuar encostada à direita mesmo quando desce sozinha. */
+  margin-left: auto;
   font-size: 11px;
   font-weight: 700;
   color: var(--tinta-fraca);
   text-transform: uppercase;
   letter-spacing: 0.3px;
+  white-space: nowrap;
 }
 
 /* Quantas unidades desse item já estão no carrinho. */
@@ -320,6 +311,7 @@
 .carrinho__corpo {
   display: none;
   max-height: 42vh;
+  max-height: 42dvh;
   overflow-y: auto;
   padding: 0 12px 12px;
 }
@@ -459,6 +451,7 @@
   gap: 10px;
   width: 100%;
   max-height: 84vh;
+  max-height: 84dvh;
   overflow-y: auto;
   padding: 18px 16px calc(18px + var(--seguro-baixo));
   border-radius: 18px 18px 0 0;
@@ -477,6 +470,7 @@
    acompanhamentos e rolar atrás do que falta é tempo com o cliente esperando. */
 .escolhas {
   max-height: 92vh;
+  max-height: 92dvh;
   padding-bottom: 0;
   gap: 0;
   /* Quem rola é a lista de opções, não a folha: o cabeçalho com o nome do
@@ -539,6 +533,13 @@
   color: var(--tinta-fraca);
   font-size: 12px;
   font-weight: 700;
+}
+
+/* Grupo obrigatório ainda em aberto. Amarelo e não vermelho: não é erro do
+   funcionário, é um passo que falta. */
+.grupo__cota[data-obrigatorio="1"] {
+  background: var(--amarelo-fundo);
+  color: var(--amarelo);
 }
 
 .grupo__opcoes {
@@ -648,37 +649,90 @@
   color: var(--vermelho);
 }
 
-/* Telas maiores (tablet no balcão): produtos ganham espaço, carrinho vira
-   coluna fixa ao lado — nada de rolar pra ver o total. */
-@media (min-width: 720px) and (orientation: landscape) {
-  .venda {
-    display: grid;
-    grid-template-columns: 1fr 340px;
-    grid-template-rows: auto auto auto 1fr;
-  }
+.selo[data-status="CANCELADO"] {
+  background: var(--linha);
+  color: var(--tinta-fraca);
+}
 
-  .topo,
-  #faixa-fila,
-  #faixa-erro,
-  .categorias {
-    grid-column: 1 / -1;
-  }
+/* Excluir a venda. Vermelho e pequeno: é uma saída, não um passo do fluxo —
+   mas com os 44px de alvo, porque quem aperta está com pressa. */
+.recentes__x {
+  flex: none;
+  width: 44px;
+  height: 44px;
+  margin-right: -6px;
+  border-radius: 10px;
+  color: var(--vermelho);
+  font-size: 17px;
+  font-weight: 800;
+}
 
-  .carrinho {
-    grid-row: 3 / -1;
-    grid-column: 2;
-    border-top: 0;
-    border-left: 1px solid var(--linha);
-  }
+.recentes__x:active {
+  background: var(--vermelho-fundo);
+}
 
-  .carrinho__alca {
-    display: none;
-  }
+/* ------------------------------------------------------- folha de exclusão */
 
-  .carrinho__corpo {
-    display: block;
-    flex: 1;
-    max-height: none;
-    padding-top: 12px;
-  }
+.excluir__pergunta {
+  margin: 6px 0 0;
+  font-weight: 700;
+}
+
+.excluir__motivos {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.excluir__motivo {
+  min-height: var(--alvo);
+  padding: 8px 10px;
+  border: 2px solid var(--linha);
+  border-radius: 12px;
+  background: var(--papel);
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1.2;
+}
+
+.excluir__motivo[data-marcado="1"] {
+  border-color: var(--vermelho);
+  background: var(--vermelho-fundo);
+  color: var(--vermelho);
+  font-weight: 800;
+}
+
+.excluir__outro {
+  width: 100%;
+  min-height: 48px;
+  padding: 0 14px;
+  border: 2px solid var(--linha);
+  border-radius: 10px;
+  font-size: 16px;
+}
+
+.excluir__outro:focus {
+  outline: none;
+  border-color: var(--rosa);
+}
+
+/* Segunda via da comanda, na lista de últimos pedidos. Discreto de propósito:
+   é uma saída pra quando a impressora falhou, não um passo do fluxo — mas com
+   os 44px de alvo, porque quem aperta está com pressa. */
+.recentes__via {
+  flex: none;
+  min-width: 60px;
+  height: 44px;
+  padding: 0 10px;
+  margin-right: -6px;
+  border-radius: 10px;
+  background: var(--fundo);
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--tinta-fraca);
+  white-space: nowrap;
+}
+
+.recentes__via:active {
+  background: var(--rosa-claro);
 }

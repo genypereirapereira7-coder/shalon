@@ -10,7 +10,6 @@ os.environ.setdefault("SHALON_DATABASE_URL", "sqlite+aiosqlite:///:memory:")
 os.environ.setdefault("SHALON_JWT_SEGREDO", "segredo-de-teste-com-mais-de-32-bytes-pra-hmac-sha256")
 os.environ.setdefault("SHALON_AMBIENTE", "teste")
 
-import pytest  # noqa: E402
 import pytest_asyncio  # noqa: E402
 from httpx import ASGITransport, AsyncClient  # noqa: E402
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine  # noqa: E402
@@ -168,13 +167,21 @@ async def opcoes(sessao, dados):
     }
 
 
-@pytest.fixture
-def entrar(cliente):
-    """Faz login e devolve o header Authorization pronto."""
+@pytest_asyncio.fixture
+async def entrar(cliente, sessao):
+    """Faz login e devolve o header Authorization pronto.
+
+    Recebe o **id** porque é o que os testes têm em mãos (`dados["joao"].id`) e
+    traduz pro nome aqui: o login é por nome de usuário, e espalhar essa
+    tradução por trinta chamadas que não testam autenticação seria ruído.
+    """
 
     async def _entrar(usuario_id: int, segredo: str) -> dict[str, str]:
+        usuario = await sessao.get(Usuario, usuario_id)
+        assert usuario is not None, f"usuário {usuario_id} não existe"
+
         resposta = await cliente.post(
-            "/auth/login", json={"usuario_id": usuario_id, "segredo": segredo}
+            "/auth/login", json={"usuario": usuario.nome, "segredo": segredo}
         )
         assert resposta.status_code == 200, resposta.text
         return {"Authorization": f"Bearer {resposta.json()['acesso']}"}

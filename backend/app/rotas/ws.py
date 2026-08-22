@@ -61,10 +61,11 @@ async def canal(ws: WebSocket) -> None:
             "dados": {
                 "papel": ident.papel.value,
                 "nome": ident.nome,
-                # O relógio do servidor. A tela da cozinha corrige o desvio do
-                # relógio do PC com ele: o alerta de impressora travada compara
-                # "agora" com o `criado_em` que veio daqui, e um PC com a hora
-                # errada acenderia o alerta em tudo ou em nada.
+                # O relógio do servidor, pra quem precisar comparar com um
+                # `criado_em`. Sai no aperto de mão porque é o único momento em
+                # que o cliente sabe que a conexão vale — e sai daqui e não do
+                # `/health` porque quem já está no socket não precisa de uma
+                # segunda ida ao servidor pra saber que horas são lá.
                 "agora": agora().isoformat(),
             },
         })

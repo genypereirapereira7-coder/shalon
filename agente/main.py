@@ -1,6 +1,12 @@
-"""Agente da cozinha: o programa que transforma pedido em papel.
+"""Agente de impressão: o programa que transforma pedido em papel.
 
-Roda no PC da cozinha e é o único pedaço do sistema que toca hardware. O laço é
+**Caminho alternativo, não o principal.** Quem imprime a comanda no dia a dia é
+o próprio celular do balcão, que despacha o texto pro RawBT assim que o servidor
+confirma a venda (`frontend/vendas/impressao.js`). Este agente continua aqui
+para a loja que preferir uma térmica presa a um PC — e os dois **não devem
+rodar juntos**: cada um imprimiria a sua via da mesma comanda.
+
+Roda num PC ligado à impressora e é o único pedaço do sistema que toca hardware. O laço é
 simples de propósito, porque ele precisa sobreviver a um sábado inteiro sem
 ninguém olhando:
 
@@ -15,14 +21,13 @@ Wi-Fi cair, o socket morrer sem avisar ou a impressora estiver sem papel na
 hora. Se o WebSocket sumisse pra sempre, o agente continuaria imprimindo tudo —
 só que com até 30 segundos de atraso.
 
-**Só confirma depois que imprimiu.** O `impresso_em` do servidor é o que apaga
-o alerta vermelho da tela da cozinha, e a fila de não-impressos é montada em
-cima dele. Confirmar antes de o papel sair transformaria uma impressora travada
+**Só confirma depois que imprimiu.** O `impresso_em` do servidor é o que tira
+a comanda da fila de não-impressos. Confirmar antes de o papel sair transformaria uma impressora travada
 numa comanda que ninguém nunca vai buscar.
 
 **Erra pro lado de imprimir duas vezes.** Se o agente imprimir e cair antes de
 confirmar, a comanda sai de novo no próximo arranque — marcada como
-REIMPRESSÃO, pra cozinha não montar o pedido duas vezes. O erro oposto — a
+REIMPRESSÃO, pra ninguém montar o pedido duas vezes. O erro oposto — a
 comanda que nunca sai — é o cliente esperando no balcão.
 """
 
@@ -31,7 +36,6 @@ import json
 import logging
 import signal
 import sys
-import webbrowser
 
 import httpx
 import websockets
@@ -273,7 +277,7 @@ class Agente:
 async def executar(caminho_config: str) -> None:
     cfg = carregar(caminho_config)
     impressora = criar(cfg.impressora, cfg.opcoes_impressora)
-    api = Api(cfg.url, cfg.usuario_id, cfg.pin)
+    api = Api(cfg.url, cfg.usuario, cfg.pin)
 
     log.info("impressora: %s", cfg.impressora)
     if not impressora.esta_ok():
@@ -282,9 +286,6 @@ async def executar(caminho_config: str) -> None:
         log.warning("a impressora não respondeu OK no arranque — confira papel e cabo")
 
     await api.entrar()
-
-    if cfg.abrir_cozinha:
-        _abrir_cozinha(cfg)
 
     agente = Agente(cfg, api, impressora)
     tarefas = [
@@ -305,19 +306,6 @@ async def executar(caminho_config: str) -> None:
         await asyncio.gather(*tarefas, return_exceptions=True)
         await api.fechar()
         impressora.fechar()
-
-
-def _abrir_cozinha(cfg: Config) -> None:
-    """Abre a tela da cozinha no navegador (§2.4).
-
-    A tela é uma página do backend, não uma janela do agente — assim a
-    interface é uma só e este programa continua minúsculo.
-    """
-    try:
-        navegador = webbrowser.get(cfg.navegador) if cfg.navegador else webbrowser.get()
-        navegador.open(cfg.url_cozinha)
-    except Exception:
-        log.warning("não consegui abrir %s no navegador", cfg.url_cozinha, exc_info=True)
 
 
 def _ouvir_sinais(parar: asyncio.Event) -> None:

@@ -4,7 +4,10 @@
  * Três coisas moram aqui porque os três PWAs precisam das três:
  *
  * 1. A sessão (tokens + quem está logado), guardada no localStorage — o
- *    celular da loja não pode deslogar sozinho no meio do expediente.
+ *    celular da loja não pode deslogar sozinho no meio do expediente. O
+ *    refresh dura um ano e desliza a cada renovação: a senha é digitada uma
+ *    vez no aparelho e não é pedida de novo. Quem tira o acesso de alguém é o
+ *    dono, pela tela de sessões, e não o relógio.
  * 2. A renovação do token de acesso, que dura 30 minutos. Ela acontece sem o
  *    funcionário perceber, e uma renovação só mesmo que dez chamadas tomem
  *    401 ao mesmo tempo (`renovacaoEmVoo`).
@@ -62,9 +65,15 @@ export function aoPerderSessao(callback) {
   return () => ouvintesSessao.delete(callback);
 }
 
-export async function entrar(usuarioId, segredo) {
+/**
+ * Entra com **nome de usuário** e senha.
+ *
+ * Não há mais lista de usuários pra escolher: a tela de login mostra dois
+ * campos, e a rota que listava quem existe deixou de existir junto com ela.
+ */
+export async function entrar(usuario, segredo) {
   const tokens = await pedir("POST", "/auth/login", {
-    usuario_id: usuarioId,
+    usuario,
     segredo,
     dispositivo: _dispositivo(),
   }, { autenticado: false });
@@ -83,10 +92,6 @@ export async function sair() {
       await pedir("POST", "/auth/sair", { refresh }, { autenticado: false });
     } catch { /* ignora */ }
   }
-}
-
-export function usuarios() {
-  return pedir("GET", "/auth/usuarios", null, { autenticado: false });
 }
 
 /**
@@ -229,9 +234,16 @@ function _mensagem(dados, resposta) {
   return `Erro ${resposta.status}`;
 }
 
+/**
+ * O rótulo do aparelho na tela de sessões do dono.
+ *
+ * Sai do user agent, que é o que o navegador entrega — não é identificação
+ * confiável, é só o que permite ao dono olhar a lista e reconhecer "esse é o
+ * celular do balcão". Leva junto qual PWA abriu a sessão, porque "Vanusa no
+ * app do dono" e "Vanusa no balcão" são coisas diferentes de se ver ali.
+ */
 function _dispositivo() {
-  // Só pra o dono reconhecer o aparelho na lista de sessões.
   const ua = navigator.userAgent;
   const modelo = /\(([^)]+)\)/.exec(ua)?.[1]?.split(";").pop()?.trim();
-  return (modelo || "navegador").slice(0, 120);
+  return `${modelo || "navegador"} · ${_app()}`.slice(0, 120);
 }

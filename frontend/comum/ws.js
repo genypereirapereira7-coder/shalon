@@ -1,8 +1,8 @@
 /**
- * Cliente do WebSocket, compartilhado pelos três PWAs.
+ * Cliente do WebSocket, compartilhado pelos dois PWAs.
  *
- * **O socket acelera; quem garante é o polling.** Nenhuma das três telas
- * depende deste arquivo pra estar correta: todas continuam recarregando sozinhas
+ * **O socket acelera; quem garante é o polling.** Nenhuma das duas telas
+ * depende deste arquivo pra estar correta: as duas continuam recarregando sozinhas
  * num intervalo próprio, e o que o WebSocket faz é encurtar a espera de 5-15
  * segundos pra menos de um. Se ele nunca conectar — proxy que bloqueia, rede da
  * loja capenga, servidor reiniciando — as telas continuam funcionando mais
@@ -17,7 +17,6 @@
  */
 
 import * as api from "./api.js";
-import * as relogio from "./relogio.js";
 
 /** O servidor derruba quem fica 60s sem falar. */
 const PING_MS = 25000;
@@ -89,7 +88,6 @@ export function conectar({ aoEvento, aoMudarConexao }) {
         // servidor conferir o token, e anunciar "online" ali acenderia o
         // pontinho verde numa conexão que vai fechar no instante seguinte.
         espera = RECONEXAO_MIN_MS;
-        if (pacote.dados?.agora) relogio.ajustar(pacote.dados.agora);
         avisar(true);
         return;
       }
@@ -134,9 +132,9 @@ export function conectar({ aoEvento, aoMudarConexao }) {
     socket = null;
   }
 
-  // A aba da cozinha fica aberta a noite toda e o navegador congela o timer da
-  // reconexão quando ela some. Voltar pra aba tem que reconectar na hora, não
-  // no fim do backoff.
+  // O celular fica horas com o app em segundo plano e o Android congela o timer
+  // da reconexão. Voltar pro app tem que reconectar na hora, não no fim do
+  // backoff.
   const aoVoltar = () => {
     if (document.visibilityState === "visible" && !socket && ativo) {
       espera = RECONEXAO_MIN_MS;

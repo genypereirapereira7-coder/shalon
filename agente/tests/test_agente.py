@@ -71,7 +71,7 @@ class ApiDeMentira:
 @pytest.fixture
 def cfg():
     return Config(
-        url="http://teste", usuario_id=1, pin="0000", impressora="fake",
+        url="http://teste", usuario="Agente", pin="0000", impressora="fake",
         fuso="America/Sao_Paulo", largura=48,
     )
 
@@ -298,9 +298,8 @@ def test_pedido_novo_do_socket_entra_na_fila(montar):
 
 def test_url_do_ws_sai_do_mesmo_servidor():
     """Duas chaves apontando pro mesmo lugar é uma chance de divergirem."""
-    http = Config(url="http://127.0.0.1:8000", usuario_id=1, pin="0", impressora="fake")
-    https = Config(url="https://shalon.app.br/", usuario_id=1, pin="0", impressora="fake")
+    http = Config(url="http://127.0.0.1:8000", usuario="Agente", pin="0", impressora="fake")
+    https = Config(url="https://shalon.app.br/", usuario="Agente", pin="0", impressora="fake")
 
     assert http.url_ws == "ws://127.0.0.1:8000/ws"
     assert https.url_ws == "wss://shalon.app.br/ws"
-    assert https.url_cozinha == "https://shalon.app.br/cozinha/"

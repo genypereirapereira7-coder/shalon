@@ -2,7 +2,10 @@
 <html lang="pt-BR">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1">
+<!-- `interactive-widget=resizes-content`: o teclado do Android encolhe a área
+     do app em vez de deslizar por cima. Sem isto o campo de observação some
+     por baixo do teclado bem na hora de digitar nele. -->
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1, interactive-widget=resizes-content">
 <title>Shalon — Vendas</title>
 <meta name="theme-color" content="#e8618c">
 <meta name="mobile-web-app-capable" content="yes">
@@ -16,41 +19,29 @@
 <body>
 
 <!-- ============================================================== LOGIN -->
+<!-- Dois campos e mais nada. A tela não mostra quem existe: listar os usuários
+     entregava a qualquer pessoa com o link os nomes de quem trabalha na loja e
+     qual deles é o dono — e no celular do balcão o botão do dono ficava ali,
+     convidando. Quem não sabe o nome não tem o que tentar. -->
 <section id="tela-login" class="login">
   <h1 class="login__marca">Shalon</h1>
+  <p class="login__papel">Balcão</p>
 
-  <div id="login-lista" class="login__caixa">
-    <p class="login__titulo">Quem está no caixa?</p>
-    <div id="usuarios" class="login__usuarios"></div>
-    <p id="login-carregando" class="fraco">Carregando…</p>
-    <button id="login-recarregar" class="botao botao--fantasma" hidden>Tentar de novo</button>
-  </div>
+  <form id="login-form" class="login__caixa" autocomplete="on">
+    <label class="login__rotulo" for="login-usuario">Usuário</label>
+    <input id="login-usuario" class="login__campo" type="text" name="username"
+           autocomplete="username" autocapitalize="none" autocorrect="off"
+           spellcheck="false" maxlength="80" enterkeyhint="next">
 
-  <div id="login-pin" class="login__caixa" hidden>
-    <button id="pin-voltar" class="login__voltar">‹ Trocar</button>
-    <p class="login__titulo"><span id="pin-nome"></span>, digite o PIN</p>
-
-    <input id="pin-campo" class="login__pin" type="password" inputmode="numeric"
-           autocomplete="off" maxlength="72" aria-label="PIN">
-
-    <div class="teclado">
-      <button class="teclado__t" data-digito="1">1</button>
-      <button class="teclado__t" data-digito="2">2</button>
-      <button class="teclado__t" data-digito="3">3</button>
-      <button class="teclado__t" data-digito="4">4</button>
-      <button class="teclado__t" data-digito="5">5</button>
-      <button class="teclado__t" data-digito="6">6</button>
-      <button class="teclado__t" data-digito="7">7</button>
-      <button class="teclado__t" data-digito="8">8</button>
-      <button class="teclado__t" data-digito="9">9</button>
-      <button class="teclado__t teclado__t--fraco" data-acao="letras" title="Usar teclado do celular">abc</button>
-      <button class="teclado__t" data-digito="0">0</button>
-      <button class="teclado__t teclado__t--fraco" data-acao="apagar" aria-label="Apagar">⌫</button>
-    </div>
+    <label class="login__rotulo" for="login-senha">Senha</label>
+    <input id="login-senha" class="login__campo" type="password" name="password"
+           autocomplete="current-password" maxlength="72" enterkeyhint="go">
 
     <p id="login-erro" class="login__erro" hidden></p>
-    <button id="pin-entrar" class="botao login__entrar">ENTRAR</button>
-  </div>
+    <button id="login-entrar" class="botao login__entrar" type="submit">ENTRAR</button>
+  </form>
+
+  <p class="login__nota fraco">A senha é pedida uma vez só neste aparelho.</p>
 </section>
 
 <!-- ============================================================== VENDA -->
@@ -67,6 +58,10 @@
   </header>
 
   <div id="faixa-fila" class="faixa faixa--atencao" hidden></div>
+  <!-- Comanda que não chegou na impressora. Separada da fila de envio porque
+       são problemas diferentes: aqui a venda já está no caixa, o que faltou
+       foi papel. -->
+  <button id="faixa-impressao" class="faixa faixa--atencao faixa--acao" hidden></button>
   <div id="faixa-erro" class="faixa faixa--erro" hidden></div>
 
   <nav id="categorias" class="categorias" aria-label="Categorias"></nav>
@@ -95,7 +90,7 @@
       </div>
       <div class="carrinho__botoes">
         <button id="btn-limpar" class="botao botao--fantasma" disabled>Limpar</button>
-        <button id="btn-enviar" class="botao carrinho__enviar" disabled>ENVIAR PARA A COZINHA</button>
+        <button id="btn-enviar" class="botao carrinho__enviar" disabled>ENVIAR E IMPRIMIR</button>
       </div>
     </div>
   </footer>
@@ -120,7 +115,7 @@
 
     <div class="escolhas__pe">
       <button id="escolhas-add" class="botao escolhas__add">
-        <span>ADICIONAR</span>
+        <span id="escolhas-rotulo">ADICIONAR</span>
         <strong id="escolhas-total">R$ 0,00</strong>
       </button>
     </div>
@@ -134,16 +129,53 @@
   <div id="painel-usuario" class="painel__folha" hidden>
     <p class="painel__titulo" id="painel-usuario-nome"></p>
     <p class="fraco" id="painel-versao"></p>
+    <p class="fraco" id="painel-impressora"></p>
     <button id="btn-atualizar-cardapio" class="botao botao--fantasma">Atualizar cardápio</button>
     <button id="btn-enviar-fila" class="botao botao--fantasma">Enviar fila agora</button>
+    <button id="btn-imprimir-fila" class="botao botao--fantasma" hidden>Imprimir comandas pendentes</button>
+    <button id="btn-descartar-impressao" class="botao botao--fantasma" hidden>Desistir das comandas pendentes</button>
     <button id="btn-sair" class="botao botao--perigo">Sair</button>
     <button class="botao botao--fantasma" data-fechar>Fechar</button>
   </div>
 
   <div id="painel-recentes" class="painel__folha" hidden>
     <p class="painel__titulo">Últimos pedidos</p>
+    <p class="fraco">A segunda via sai marcada como REIMPRESSÃO.</p>
     <ul id="lista-recentes" class="recentes"></ul>
     <button class="botao botao--fantasma" data-fechar>Fechar</button>
+  </div>
+</div>
+
+<!-- ========================================================== EXCLUIR VENDA -->
+<!-- Cancelar é dinheiro saindo do caixa. O motivo não é burocracia: é o que o
+     dono lê no fim do dia pra saber por que o total não bate com a gaveta.
+     Por isso são botões e não um campo em branco — no balcão, com cliente na
+     frente, um campo em branco vira "erro" digitado às pressas ou nada. -->
+<div id="excluir" class="painel" hidden>
+  <div class="painel__fundo" data-fechar-excluir></div>
+
+  <div class="painel__folha">
+    <p class="painel__titulo">Excluir <span id="excluir-numero"></span>?</p>
+    <p class="fraco" id="excluir-resumo"></p>
+
+    <p class="excluir__pergunta">Por quê?</p>
+    <div class="excluir__motivos">
+      <button class="excluir__motivo" data-motivo="Cliente desistiu">Cliente desistiu</button>
+      <button class="excluir__motivo" data-motivo="Pedido digitado errado">Pedido errado</button>
+      <button class="excluir__motivo" data-motivo="Item em falta">Item em falta</button>
+      <button class="excluir__motivo" data-motivo="Cliente não pagou">Não pagou</button>
+    </div>
+
+    <input id="excluir-outro" class="excluir__outro" type="text" maxlength="280"
+           placeholder="Outro motivo (opcional)">
+
+    <p class="fraco">
+      O valor sai do faturamento e o pedido aparece como cancelado no painel do
+      dono. Não dá pra desfazer.
+    </p>
+
+    <button id="excluir-confirmar" class="botao botao--perigo" disabled>EXCLUIR A VENDA</button>
+    <button class="botao botao--fantasma" data-fechar-excluir>Voltar</button>
   </div>
 </div>
 

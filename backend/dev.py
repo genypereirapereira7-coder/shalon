@@ -73,11 +73,11 @@ def main() -> None:
 
     print(
         "\ntelas pra abrir no navegador:"
-        f"\n  vendas   http://127.0.0.1:{porta}/vendas/     entrar como Joao, PIN 1234"
-        f"\n  cozinha  http://127.0.0.1:{porta}/cozinha/    entrar como Cozinha, PIN 0000"
-        f"\n  dono     http://127.0.0.1:{porta}/dono/       entrar como Dono, senha shalon123"
+        f"\n  vendas   http://127.0.0.1:{porta}/vendas/     usuario: vanusa"
+        f"\n  dono     http://127.0.0.1:{porta}/dono/       usuario: adriano"
         f"\n  API      http://127.0.0.1:{porta}/docs"
-        "\n\nPra sair papel, rode o agente noutro terminal (veja o README).\n",
+        "\n\nA comanda sai no proprio celular do balcao, pelo RawBT: abra o"
+        "\n/vendas/ num Android com o RawBT instalado (veja o README).\n",
         flush=True,
     )
 

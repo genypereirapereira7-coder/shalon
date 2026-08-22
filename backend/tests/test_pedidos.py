@@ -372,6 +372,26 @@ async def test_funcionario_nao_le_a_fila_do_agente(cliente, dados, caixa):
     assert (await cliente.get("/pedidos/nao-impressos", headers=caixa)).status_code == 403
 
 
+async def test_o_balcao_confirma_a_propria_impressao(cliente, dados, caixa, entrar):
+    """Quem imprime a comanda hoje é o celular que vendeu, pelo RawBT.
+
+    Sem esta permissão a venda ficaria pra sempre em `/pedidos/nao-impressos`, e
+    o agente do PC — quando alguém o mantém ligado — imprimiria uma segunda via
+    de tudo que o balcão já tinha impresso.
+    """
+    criado = await cliente.post(
+        "/pedidos", json=corpo(dados, (dados["casquinha"], 1)), headers=caixa
+    )
+    pedido_id = criado.json()["id"]
+
+    ack = await cliente.post(f"/pedidos/{pedido_id}/impresso", headers=caixa)
+    assert ack.status_code == 200
+    assert ack.json()["impresso_em"] is not None
+
+    agente = await entrar(dados["agente"].id, "0000")
+    assert (await cliente.get("/pedidos/nao-impressos", headers=agente)).json() == []
+
+
 async def test_reimprimir_devolve_o_pedido_pra_fila(cliente, dados, caixa, entrar):
     agente = await entrar(dados["agente"].id, "0000")
     cozinha = await entrar(dados["cozinha"].id, "0000")
@@ -406,6 +426,73 @@ async def test_cancelado_nao_entra_na_fila_de_impressao(cliente, dados, caixa, e
 
 
 # --------------------------------------------------------------------- status
+
+async def test_o_balcao_cancela_a_propria_venda(cliente, dados, caixa, entrar):
+    """O erro acontece no balcão e o cliente está lá. Chamar o dono pra desfazer
+    um pedido digitado errado deixaria a fila parada por um engano de dez
+    segundos.
+    """
+    criado = await cliente.post(
+        "/pedidos", json=corpo(dados, (dados["casquinha"], 1)), headers=caixa
+    )
+    pedido_id = criado.json()["id"]
+
+    resposta = await cliente.post(
+        f"/pedidos/{pedido_id}/cancelar",
+        json={"motivo": "Cliente desistiu"},
+        headers=caixa,
+    )
+    assert resposta.status_code == 200
+    assert resposta.json()["status"] == "CANCELADO"
+    assert resposta.json()["motivo_cancelamento"] == "Cliente desistiu"
+
+    # E o valor sai do faturamento — é isso que "excluir" quer dizer.
+    dono = await entrar(dados["dono"].id, "senhaforte")
+    resumo = (await cliente.get("/relatorios/hoje", headers=dono)).json()
+    assert resumo["total_centavos"] == 0
+    assert resumo["cancelados_qtd"] == 1
+
+
+async def test_funcionario_nao_cancela_venda_de_outro(cliente, dados, caixa, entrar, sessao):
+    """Mexer no movimento de outro atendente passa por quem responde pelo caixa."""
+    from app.models.usuario import Papel, Usuario
+    from app.seguranca import gerar_hash
+
+    outra = Usuario(nome="Maria", pin_hash=gerar_hash("4321"), papel=Papel.FUNCIONARIO)
+    sessao.add(outra)
+    await sessao.commit()
+
+    criado = await cliente.post(
+        "/pedidos", json=corpo(dados, (dados["casquinha"], 1)), headers=caixa
+    )
+    pedido_id = criado.json()["id"]
+
+    de_maria = await entrar(outra.id, "4321")
+    recusado = await cliente.post(
+        f"/pedidos/{pedido_id}/cancelar", json={"motivo": "quis desfazer"}, headers=de_maria
+    )
+    assert recusado.status_code == 403
+    assert "outro atendente" in recusado.json()["detail"]
+
+    # O dono passa por cima da restrição — é ele quem responde pelo caixa.
+    dono = await entrar(dados["dono"].id, "senhaforte")
+    assert (
+        await cliente.post(
+            f"/pedidos/{pedido_id}/cancelar", json={"motivo": "conferido"}, headers=dono
+        )
+    ).status_code == 200
+
+
+async def test_cancelar_exige_motivo(cliente, dados, caixa):
+    """Sumir com dinheiro sem explicação é o que o motivo existe pra impedir."""
+    criado = await cliente.post(
+        "/pedidos", json=corpo(dados, (dados["casquinha"], 1)), headers=caixa
+    )
+    resposta = await cliente.post(
+        f"/pedidos/{criado.json()['id']}/cancelar", json={"motivo": ""}, headers=caixa
+    )
+    assert resposta.status_code == 422
+
 
 async def test_cozinha_avanca_o_status(cliente, dados, caixa, entrar):
     cozinha = await entrar(dados["cozinha"].id, "0000")
@@ -482,14 +569,26 @@ async def test_dono_cancela_com_motivo(cliente, dados, caixa, entrar):
     assert resposta.json()["cancelado_em"] is not None
 
 
-async def test_funcionario_nao_cancela(cliente, dados, caixa):
+async def test_funcionario_nao_cancela_pedido_de_outro_dia(cliente, dados, caixa, sessao):
+    """Mexer em movimento que já foi conferido passa por quem responde pelo caixa.
+
+    O balcão desfaz o engano de agora — o de ontem já entrou em relatório, e
+    pode ter sido usado pra fechar a gaveta.
+    """
     criado = await cliente.post(
         "/pedidos", json=corpo(dados, (dados["casquinha"], 1)), headers=caixa
     )
+    pedido_id = criado.json()["id"]
+
+    de_ontem = await sessao.get(Pedido, uuid.UUID(pedido_id))
+    de_ontem.data_operacional = dia_atual() - timedelta(days=1)
+    await sessao.commit()
+
     resposta = await cliente.post(
-        f"/pedidos/{criado.json()['id']}/cancelar", json={"motivo": "quis"}, headers=caixa
+        f"/pedidos/{pedido_id}/cancelar", json={"motivo": "quis desfazer"}, headers=caixa
     )
     assert resposta.status_code == 403
+    assert "outro dia" in resposta.json()["detail"]
 
 
 async def test_cancelar_sem_motivo_e_recusado(cliente, dados, caixa, entrar):

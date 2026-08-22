@@ -18,13 +18,8 @@ shalon.app.br {
 		try_files {path} /index.html
 		file_server
 	}
-	handle_path /cozinha/* {
-		root * /frontend/cozinha
-		try_files {path} /index.html
-		file_server
-	}
 
-	# api.js, formato.js e o css que os três PWAs compartilham
+	# api.js, formato.js e o css que os dois PWAs compartilham
 	handle_path /comum/* {
 		root * /frontend/comum
 		file_server
@@ -35,7 +30,6 @@ shalon.app.br {
 	# Sem a barra final o handle_path acima não pega, e o PWA abriria em 404.
 	redir /vendas /vendas/ permanent
 	redir /dono /dono/ permanent
-	redir /cozinha /cozinha/ permanent
 
 	header {
 		X-Content-Type-Options nosniff
@@ -44,6 +38,6 @@ shalon.app.br {
 	}
 
 	# Service worker nunca pode ficar em cache, senão o PWA congela numa versão velha
-	@sw path /vendas/sw.js /dono/sw.js /cozinha/sw.js
+	@sw path /vendas/sw.js /dono/sw.js
 	header @sw Cache-Control "no-cache, no-store, must-revalidate"
 }
