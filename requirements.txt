@@ -1,0 +1,36 @@
+# Dependências para rodar o backend do Shalon no Render.
+#
+# É só o backend que sobe lá: o `agente/` é o programa da impressora térmica,
+# que roda no PC da loja, e o `frontend/` são arquivos estáticos que o próprio
+# FastAPI serve (app/main.py monta /vendas, /dono e /comum).
+#
+# Versões travadas: são as mesmas do ambiente onde os testes passam. Os limites
+# em backend/pyproject.toml continuam sendo a fonte da verdade; aqui é a foto.
+# Instalar com:  pip install -r requirements.txt
+
+# --- servidor -------------------------------------------------------------
+fastapi==0.141.1
+# O extra [standard] traz uvloop, httptools e o `websockets` que a rota /ws usa.
+uvicorn[standard]==0.52.1
+
+# --- banco ----------------------------------------------------------------
+# O extra [asyncio] puxa o greenlet, sem o qual a engine async não roda.
+SQLAlchemy[asyncio]==2.0.52
+asyncpg==0.31.0
+alembic==1.19.1
+
+# --- configuração e validação --------------------------------------------
+pydantic==2.13.4
+pydantic-settings==2.15.0
+
+# --- autenticação ---------------------------------------------------------
+PyJWT==2.13.0
+bcrypt==5.0.0
+# Nenhuma rota usa form-data hoje (o login é JSON), mas o FastAPI só aceita
+# `Form`/`UploadFile` com ele instalado. Está no pyproject; fica aqui igual.
+python-multipart==0.0.32
+
+# --- fuso -----------------------------------------------------------------
+# A imagem do Render é slim e não traz a base IANA. Sem tzdata o zoneinfo não
+# acha America/Sao_Paulo e a virada do dia operacional (04h) quebra.
+tzdata==2026.3

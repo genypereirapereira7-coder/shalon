@@ -189,6 +189,47 @@ docker compose exec api alembic upgrade head
 docker compose exec api python -m app.seed
 ```
 
+## Publicar no Render
+
+O repositório já vem pronto: `render.yaml` descreve o serviço e o banco,
+`requirements.txt` traz as dependências e `.python-version` fixa o interpretador.
+
+No painel do Render: **New → Blueprint**, aponte pro repositório e confirme. Ele
+cria o Postgres, cria o serviço web e liga os dois — não há variável de ambiente
+pra digitar. Alguns minutos depois o endereço `https://<nome>.onrender.com/` abre
+direto na tela de vendas.
+
+**Um serviço só.** O FastAPI serve a API, o WebSocket e os dois PWAs na mesma
+origem, e é isso que faz o `api.js` funcionar com caminhos relativos. Não há
+frontend separado pra publicar. O `Caddyfile` e o `docker-compose.yml` continuam
+no repositório para quem preferir a VPS.
+
+O que acontece a cada deploy (o `startCommand` do `render.yaml`):
+
+1. `alembic upgrade head` — cria ou atualiza o schema.
+2. `python -m app.seed` — planta o cardápio e as contas `vanusa` e `adriano`.
+   É idempotente: não duplica nada e não desfaz preço que o dono já editou.
+3. `uvicorn … --workers 1`.
+
+**Por que um worker só.** O gerenciador de WebSocket guarda as conexões em
+memória do processo. Com dois workers, metade dos avisos de pedido novo cairia
+no worker errado e nunca chegaria na tela.
+
+**Trocar as senhas sem mexer em código.** Crie `SHALON_SENHA_VENDAS` e
+`SHALON_SENHA_DONO` em *Environment*. Elas valem na primeira semeadura de cada
+conta; depois disso a senha vive no banco.
+
+**O plano gratuito tem dois preços escondidos.** O serviço hiberna depois de 15
+minutos parado e leva perto de um minuto pra acordar — quem chegar primeiro num
+sábado de manhã espera. E o Postgres gratuito expira; anote a data ou passe pro
+plano pago antes que ela chegue, porque o banco vai junto. Para uma loja que
+abre todo dia, o plano pago do serviço web é o que faz sentido.
+
+**Se precisar apontar pra outro banco**, cole a string de conexão como ela vier,
+em `SHALON_DATABASE_URL`. O `config.py` traduz `postgres://` e `postgresql://`
+para `postgresql+asyncpg://` e converte `?sslmode=require` no `ssl=require` que
+o asyncpg entende.
+
 ## Links
 
 Com o servidor no ar:

@@ -1,0 +1,70 @@
+# Blueprint do Render: um serviço web + um Postgres.
+#
+# Como usar: no painel do Render, New > Blueprint, aponte pro repositório.
+# Ele lê este arquivo, cria o banco, cria o serviço e liga os dois sozinho.
+#
+# Um serviço só, de propósito: o FastAPI serve a API, o WebSocket e os dois
+# PWAs na mesma origem (app/main.py). Não há frontend separado pra publicar, e
+# é isso que faz o `api.js` funcionar com caminhos relativos.
+
+databases:
+  - name: shalon-db
+    databaseName: shalon
+    user: shalon
+    plan: free
+    region: oregon
+
+services:
+  - type: web
+    name: shalon
+    runtime: python
+    plan: free
+    region: oregon
+
+    buildCommand: pip install -r requirements.txt
+
+    # `alembic upgrade head` cria/atualiza o schema; `app.seed` planta o
+    # cardápio e as contas (vanusa e adriano) e é idempotente — rodar de novo
+    # não duplica nada e não mexe em preço que o dono já editou.
+    #
+    # `--workers 1` não é economia: o gerenciador de WebSocket guarda as
+    # conexões em memória do processo. Com dois workers, metade dos avisos de
+    # pedido novo não chegaria na tela.
+    startCommand: >-
+      cd backend &&
+      alembic upgrade head &&
+      python -m app.seed &&
+      uvicorn app.main:app --host 0.0.0.0 --port $PORT --workers 1
+
+    healthCheckPath: /health
+
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.12.8"
+
+      # O código já força America/Sao_Paulo pelo `SHALON_FUSO`; isto alinha os
+      # logs do próprio Render, que sairiam em UTC.
+      - key: TZ
+        value: America/Sao_Paulo
+
+      # Desliga o /docs público. A tela do dono não depende dele.
+      - key: SHALON_AMBIENTE
+        value: prod
+
+      # O Render entrega no formato do libpq (`postgresql://…`); o
+      # `config.py` traduz pro `postgresql+asyncpg://` que a engine async usa.
+      - key: SHALON_DATABASE_URL
+        fromDatabase:
+          name: shalon-db
+          property: connectionString
+
+      # Gerado pelo Render e nunca visto por ninguém. Trocar este valor desloga
+      # todo mundo: cada celular teria que digitar a senha de novo.
+      - key: SHALON_JWT_SEGREDO
+        generateValue: true
+
+      # As senhas do balcão e do dono têm padrão no `config.py`. Pra trocar sem
+      # mexer em código, crie estas duas no painel (Environment) — elas valem
+      # só na primeira semeadura de cada conta:
+      #   SHALON_SENHA_VENDAS
+      #   SHALON_SENHA_DONO

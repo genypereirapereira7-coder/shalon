@@ -7,6 +7,7 @@ from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import text
 
@@ -101,6 +102,19 @@ app.include_router(relatorios.rotas)
 app.include_router(ws.rotas)
 
 
+@app.get("/", include_in_schema=False)
+async def raiz():
+    """A porta da frente é o balcão.
+
+    Em produção quem fazia este desvio era o Caddy (`redir / /vendas/`). Numa
+    hospedagem gerenciada não há Caddy nenhum, e sem esta rota o endereço que
+    a pessoa recebe — o domínio pelado — abre num 404 do FastAPI. Quem vende é
+    quem digita o endereço no celular; a tela do dono se alcança por
+    `/dono/`.
+    """
+    return RedirectResponse("/vendas/")
+
+
 @app.get("/health", tags=["infra"])
 async def health():
     """Checagem de vida — inclui o banco, senão só diz que o Python subiu."""
@@ -121,8 +135,11 @@ async def health():
     }
 
 
-# Em dev o próprio FastAPI serve os PWAs; em produção quem serve é o Caddy.
-# São dois: vendas e dono. A tela da cozinha saiu junto com o PC da cozinha
+# Quem serve os PWAs é este `StaticFiles`, em dev e na hospedagem gerenciada
+# (Render) — lá tudo mora numa origem só, e por isso o `api.js` chama caminhos
+# relativos e o `ws.js` monta a URL a partir do próprio host. O Caddyfile do
+# repositório serve só ao caminho alternativo, com a VPS e o compose.
+# São dois PWAs: vendas e dono. A tela da cozinha saiu junto com o PC da cozinha
 # — quem imprime a comanda agora é o próprio celular do balcão, pelo RawBT.
 _frontend = (Path(__file__).resolve().parent.parent / cfg.dir_frontend).resolve()
 for _nome in ("vendas", "dono"):
