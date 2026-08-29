@@ -26,6 +26,13 @@ function _app() {
   return location.pathname.split("/").filter(Boolean)[0] || "raiz";
 }
 
+// Sem isto, o Android trata o localStorage como descartável: com pouco espaço
+// livre, o Chrome apaga o site "menos usado" pra abrir lugar — e a sessão de
+// um ano vira nada, sem aviso, sem erro, só o login pedindo tudo de novo. Este
+// pedido diz ao navegador "não apague isto sozinho". Best-effort: navegador
+// que não suporta, ou que recusa, deixa o app funcionando do jeito de sempre.
+navigator.storage?.persist?.().catch(() => {});
+
 /** O servidor recusou: 4xx/5xx com resposta. Reenviar não resolve. */
 export class ErroApi extends Error {
   constructor(status, mensagem, corpo) {

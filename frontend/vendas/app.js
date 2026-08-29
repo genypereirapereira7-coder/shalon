@@ -189,6 +189,7 @@ async function criarConta() {
 
 async function abrirVenda() {
   $("tela-login").hidden = true;
+  $("tela-cadastro").hidden = true;
   $("tela-venda").hidden = false;
   $("nome-usuario").textContent = api.sessaoAtual()?.nome ?? "";
 
@@ -243,7 +244,14 @@ async function abrirVenda() {
 function ligarSocket() {
   estado.socket?.fechar();
   estado.socket = ws.conectar({
-    aoEvento: (evento) => {
+    aoEvento: (evento, dados) => {
+      if (evento === "usuario.desativado") {
+        if (dados?.usuario_id === api.sessaoAtual()?.usuario_id) {
+          forcarSaida("Sua conta foi desativada pelo dono");
+        }
+        return;
+      }
+
       if (evento !== "preco.alterado") return;
 
       // Não no meio de uma montagem: o `aplicarCardapio` remonta o mapa de
@@ -1025,6 +1033,25 @@ async function sair() {
   mostrarLogin();
 }
 
+/**
+ * O dono pausou ou excluiu esta conta enquanto o aparelho estava logado.
+ *
+ * Diferente do `sair()` normal, não pergunta nada: quem perdeu o acesso não
+ * decide mais se sai com venda pendente na fila — ela fica salva no aparelho
+ * e sobe sozinha quando alguém logar de novo aqui.
+ */
+async function forcarSaida(motivo) {
+  estado.socket?.fechar();
+  estado.socket = null;
+
+  await api.sair();
+  estado.carrinho.clear();
+  estado.saidaConfirmada = false;
+  fecharPainel();
+  mostrarLogin();
+  aviso(motivo, "erro");
+}
+
 // ==================================================================== eventos
 
 function ligarEventos() {
@@ -1065,7 +1092,6 @@ function ligarEventos() {
   $("btn-usuario").onclick = () => abrirPainel("usuario");
   $("btn-recentes").onclick = () => abrirPainel("recentes");
   $("btn-sair").onclick = sair;
-  $("btn-atualizar-cardapio").onclick = () => baixarCardapio();
   $("btn-enviar-fila").onclick = async () => {
     aviso("Enviando fila…");
     await sincronizar();

@@ -40,6 +40,7 @@ class Evento(str, enum.Enum):
     PRECO_ALTERADO = "preco.alterado"
     METRICAS_TICK = "metricas.tick"
     IMPRESSORA_STATUS = "impressora.status"
+    USUARIO_DESATIVADO = "usuario.desativado"
 
 
 # Quem recebe o quê. Mora aqui, junto do enum, pra que o destino seja uma
@@ -57,6 +58,10 @@ DESTINOS: dict[Evento, tuple[Papel, ...]] = {
     # Papel sem papel na impressora: quem precisa saber que ela travou é a
     # cozinha (que vai buscar a comanda na mão) e o dono.
     Evento.IMPRESSORA_STATUS: (Papel.COZINHA, Papel.DONO),
+    # Só o balcão precisa ouvir isto. O roteamento é por papel, não por usuário
+    # (topo do arquivo) — todo FUNCIONARIO conectado recebe o aviso com o id de
+    # quem foi pausado ou excluído, e cada tela decide sozinha se é ela mesma.
+    Evento.USUARIO_DESATIVADO: (Papel.FUNCIONARIO,),
 }
 
 
