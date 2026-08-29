@@ -55,11 +55,10 @@ class Config(BaseSettings):
     # Onde ficam os PWAs; em dev o próprio FastAPI serve os arquivos.
     dir_frontend: str = "../frontend"
 
-    # Usadas só pelo seed inicial. Ficam aqui como padrão pra que a loja
-    # funcione sem ninguém decorar variável de ambiente — e continuam sendo
-    # variáveis pra que trocar a senha não exija editar código.
+    # Só o dono nasce pelo seed. Fica aqui como padrão pra que a loja funcione
+    # sem ninguém decorar variável de ambiente — e continua sendo variável pra
+    # que trocar a senha não exija editar código.
     senha_dono: str = "adriano212121"
-    senha_vendas: str = "shalon691040"
 
     @field_validator("database_url")
     @classmethod

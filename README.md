@@ -207,17 +207,19 @@ no repositório para quem preferir a VPS.
 O que acontece a cada deploy (o `startCommand` do `render.yaml`):
 
 1. `alembic upgrade head` — cria ou atualiza o schema.
-2. `python -m app.seed` — planta o cardápio e as contas `vanusa` e `adriano`.
-   É idempotente: não duplica nada e não desfaz preço que o dono já editou.
+2. `python -m app.seed` — planta o cardápio e a conta `adriano`. Funcionário
+   não nasce pelo seed: cada um cria a própria conta pela tela de vendas
+   ("Criar minha conta"). É idempotente: não duplica nada e não desfaz preço
+   que o dono já editou.
 3. `uvicorn … --workers 1`.
 
 **Por que um worker só.** O gerenciador de WebSocket guarda as conexões em
 memória do processo. Com dois workers, metade dos avisos de pedido novo cairia
 no worker errado e nunca chegaria na tela.
 
-**Trocar as senhas sem mexer em código.** Crie `SHALON_SENHA_VENDAS` e
-`SHALON_SENHA_DONO` em *Environment*. Elas valem na primeira semeadura de cada
-conta; depois disso a senha vive no banco.
+**Trocar a senha do dono sem mexer em código.** Crie `SHALON_SENHA_DONO` em
+*Environment*. Ela vale na primeira semeadura da conta; depois disso a senha
+vive no banco.
 
 **O plano gratuito tem dois preços escondidos.** O serviço hiberna depois de 15
 minutos parado e leva perto de um minuto pra acordar — quem chegar primeiro num
@@ -269,8 +271,10 @@ Criados pelo `python -m app.seed`:
 | Usuário | Segredo | Papel |
 | --- | --- | --- |
 | `adriano` | `adriano212121` | DONO |
-| `vanusa` | `shalon691040` | FUNCIONARIO |
 | Agente de impressão | `0000` | AGENTE |
+
+Funcionário não nasce pelo seed: abra `/vendas/`, toque em **Criar minha
+conta** e cadastre nome + senha de 6 números.
 
 O login é por **nome de usuário e senha** — não há lista de usuários pra
 escolher, e nem rota que a devolva: a tela mostra dois campos, e quem não sabe o
@@ -283,9 +287,9 @@ mostra cada aparelho conectado e o botão que o derruba. O aparelho removido
 volta pra tela de login em até 30 minutos — é o tempo que o token de acesso que
 ele já tem na mão leva pra vencer.
 
-As senhas vêm de `SHALON_SENHA_DONO` e `SHALON_SENHA_VENDAS`, e os valores
-acima são só o padrão do `config.py`. **Troque-as antes de expor o sistema fora
-da loja**, junto com o `SHALON_JWT_SEGREDO`:
+A senha do dono vem de `SHALON_SENHA_DONO`, e o valor acima é só o padrão do
+`config.py`. **Troque-a antes de expor o sistema fora da loja**, junto com o
+`SHALON_JWT_SEGREDO`:
 
 ```bash
 python -c "import secrets; print(secrets.token_urlsafe(48))"
@@ -324,7 +328,6 @@ Tudo por variável de ambiente com prefixo `SHALON_`; os padrões estão em
 | `SHALON_FUSO` | `America/Sao_Paulo` | fuso do dia operacional |
 | `SHALON_HORA_VIRADA_DIA` | `4` | hora em que o dia operacional vira |
 | `SHALON_SENHA_DONO` | `adriano212121` | usada só pelo seed inicial |
-| `SHALON_SENHA_VENDAS` | `shalon691040` | usada só pelo seed inicial |
 
 O fuso é explícito de propósito: a VPS roda em UTC e a virada das 4h sairia
 errada se dependesse do relógio do sistema.

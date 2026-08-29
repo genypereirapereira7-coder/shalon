@@ -39,9 +39,13 @@ cfg = get_config()
 # Sem conta de cozinha: a tela do PC saiu do sistema, e quem imprime a comanda
 # agora é o próprio celular que vendeu, pelo RawBT. Criar uma conta com PIN
 # 0000 que nenhuma tela usa é porta aberta sem porteiro.
+#
+# Sem funcionário fixo também: quem vende cria a própria conta pelo link
+# "Criar minha conta" na tela de vendas (`POST /auth/cadastro`). Nascer com
+# uma "Vanusa" de PIN padrão era conta de ninguém, com senha que todo mundo
+# que lê o código conhece.
 USUARIOS = [
     ("Adriano", cfg.senha_dono, Papel.DONO),
-    ("Vanusa", cfg.senha_vendas, Papel.FUNCIONARIO),
     # Conta de máquina: não entra por tela nenhuma, e o agente de PC só é usado
     # por quem preferir a térmica presa a um computador.
     ("Agente de impressão", "0000", Papel.AGENTE),
@@ -313,8 +317,9 @@ async def semear(detalhado: bool = True) -> None:
         return
 
     print(
-        "\n  As senhas vem do config.py (SHALON_SENHA_DONO / SHALON_SENHA_VENDAS)."
-        "\n  Troque-as antes de expor o sistema fora da loja."
+        "\n  A senha do dono vem do config.py (SHALON_SENHA_DONO)."
+        "\n  Troque-a antes de expor o sistema fora da loja."
+        "\n  Funcionário não nasce pelo seed — cria a própria conta pela tela de vendas."
     )
 
 

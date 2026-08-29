@@ -73,7 +73,7 @@ def main() -> None:
 
     print(
         "\ntelas pra abrir no navegador:"
-        f"\n  vendas   http://127.0.0.1:{porta}/vendas/     usuario: vanusa"
+        f"\n  vendas   http://127.0.0.1:{porta}/vendas/     toque em 'Criar minha conta'"
         f"\n  dono     http://127.0.0.1:{porta}/dono/       usuario: adriano"
         f"\n  API      http://127.0.0.1:{porta}/docs"
         "\n\nA comanda sai no proprio celular do balcao, pelo RawBT: abra o"

@@ -63,8 +63,7 @@ services:
       - key: SHALON_JWT_SEGREDO
         generateValue: true
 
-      # As senhas do balcão e do dono têm padrão no `config.py`. Pra trocar sem
-      # mexer em código, crie estas duas no painel (Environment) — elas valem
-      # só na primeira semeadura de cada conta:
-      #   SHALON_SENHA_VENDAS
+      # A senha do dono tem padrão no `config.py`. Pra trocar sem mexer em
+      # código, crie esta no painel (Environment) — vale só na primeira
+      # semeadura da conta:
       #   SHALON_SENHA_DONO
