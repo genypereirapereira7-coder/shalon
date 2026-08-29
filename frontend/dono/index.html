@@ -151,6 +151,7 @@
     <p class="painel__titulo" id="painel-usuario-nome"></p>
     <p class="fraco" id="painel-versao"></p>
     <button id="btn-atualizar" class="botao botao--fantasma">Atualizar agora</button>
+    <button id="btn-funcionarios" class="botao botao--fantasma">Funcionários</button>
     <button id="btn-acessos" class="botao botao--fantasma">Quem está logado</button>
     <button id="btn-sair" class="botao botao--perigo">Sair</button>
     <button class="botao botao--fantasma" data-fechar>Fechar</button>
@@ -173,6 +174,27 @@
 
     <button id="acessos-atualizar" class="botao botao--fantasma">Atualizar lista</button>
     <button class="botao botao--fantasma" data-fechar-acessos>Fechar</button>
+  </div>
+</div>
+
+<!-- =========================================================== FUNCIONÁRIOS -->
+<!-- Contas criadas pelo próprio funcionário na tela de vendas. Pausar tira o
+     acesso na hora sem apagar nada; excluir só funciona pra quem nunca
+     vendeu — quem já vendeu, o servidor recusa e a tela explica por quê. -->
+<div id="funcionarios" class="painel" hidden>
+  <div class="painel__fundo" data-fechar-funcionarios></div>
+
+  <div class="painel__folha">
+    <p class="painel__titulo">Funcionários</p>
+    <p class="fraco">
+      Pausado não consegue mais entrar, mas a conta continua existindo.
+      Excluir só funciona pra quem nunca registrou uma venda.
+    </p>
+
+    <ul id="lista-funcionarios" class="acessos"></ul>
+
+    <button id="funcionarios-atualizar" class="botao botao--fantasma">Atualizar lista</button>
+    <button class="botao botao--fantasma" data-fechar-funcionarios>Fechar</button>
   </div>
 </div>
 

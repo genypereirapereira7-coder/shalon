@@ -82,6 +82,22 @@ export async function entrar(usuario, segredo) {
   return sessao;
 }
 
+/**
+ * Cria a conta do funcionário e já entra com ela — mesma ideia do `entrar`,
+ * numa tacada só. Só nasce FUNCIONARIO; quem é dono já existe no banco antes
+ * do sistema subir.
+ */
+export async function cadastrar(nome, senha) {
+  const tokens = await pedir("POST", "/auth/cadastro", {
+    nome,
+    senha,
+    dispositivo: _dispositivo(),
+  }, { autenticado: false });
+
+  _gravar(tokens);
+  return sessao;
+}
+
 export async function sair() {
   const refresh = sessao?.refresh;
   _gravar(null);

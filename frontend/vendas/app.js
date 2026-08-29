@@ -102,9 +102,17 @@ function registrarServiceWorker() {
 function mostrarLogin() {
   fecharEscolhas();
   $("tela-venda").hidden = true;
+  $("tela-cadastro").hidden = true;
   $("tela-login").hidden = false;
   $("login-erro").hidden = true;
   $("login-senha").value = "";
+}
+
+function mostrarCadastro() {
+  $("tela-login").hidden = true;
+  $("tela-cadastro").hidden = false;
+  $("cadastro-erro").hidden = true;
+  $("cadastro-senha").value = "";
 }
 
 async function entrar() {
@@ -140,6 +148,40 @@ async function entrar() {
   } finally {
     botao.disabled = false;
     botao.textContent = "ENTRAR";
+  }
+}
+
+async function criarConta() {
+  const nome = $("cadastro-nome").value.trim();
+  const senha = $("cadastro-senha").value;
+  const erroEl = $("cadastro-erro");
+  const botao = $("cadastro-criar");
+
+  if (!nome || !/^\d{6}$/.test(senha)) {
+    erroEl.textContent = "Preencha o nome e uma senha de 6 números";
+    erroEl.hidden = false;
+    return;
+  }
+
+  botao.disabled = true;
+  botao.textContent = "CRIANDO…";
+  erroEl.hidden = true;
+
+  try {
+    await api.cadastrar(nome, senha);
+    $("cadastro-senha").value = "";
+    await abrirVenda();
+  } catch (erro) {
+    erroEl.textContent =
+      erro instanceof api.ErroRede
+        ? "Sem conexão — não dá pra criar a conta agora."
+        : erro.message;
+    erroEl.hidden = false;
+    $("cadastro-senha").value = "";
+    $("cadastro-senha").focus();
+  } finally {
+    botao.disabled = false;
+    botao.textContent = "CRIAR CONTA";
   }
 }
 
@@ -993,6 +1035,12 @@ function ligarEventos() {
     e.preventDefault();
     entrar();
   });
+  $("cadastro-form").addEventListener("submit", (e) => {
+    e.preventDefault();
+    criarConta();
+  });
+  $("link-cadastro").onclick = mostrarCadastro;
+  $("link-login").onclick = mostrarLogin;
 
   // --- venda
   $("carrinho-alca").onclick = () => {

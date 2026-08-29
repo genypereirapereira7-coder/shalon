@@ -9,7 +9,7 @@ from sqlalchemy import func, select
 from app.config import get_config
 from app.dependencias import IdentidadeDep, SessaoDep, SoDono
 from app.models.base import agora
-from app.models.usuario import SessaoAuth, Usuario
+from app.models.usuario import Papel, SessaoAuth, Usuario
 from app.schemas.auth import (
     LoginEntrada,
     RenovarEntrada,
@@ -17,9 +17,11 @@ from app.schemas.auth import (
     TokensSaida,
     UsuarioPublico,
 )
+from app.schemas.usuario import CadastroEntrada
 from app.seguranca import (
     conferir_hash,
     criar_token_acesso,
+    gerar_hash,
     gerar_refresh,
     hash_refresh,
     trava_login,
@@ -60,6 +62,33 @@ async def login(dados: LoginEntrada, request: Request, sessao: SessaoDep):
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Usuário ou senha inválidos")
 
     trava_login.limpar(chave)
+    return await _emitir_tokens(sessao, usuario, dados.dispositivo)
+
+
+@rotas.post("/cadastro", response_model=TokensSaida, status_code=status.HTTP_201_CREATED)
+async def cadastro(dados: CadastroEntrada, sessao: SessaoDep):
+    """O funcionário cria a própria conta na primeira vez que abre o app.
+
+    Sempre nasce FUNCIONARIO — quem vira DONO é gente que já existe no banco
+    antes de o sistema subir, não alguém que digitou um PIN na tela de vendas.
+    O nome não pode repetir um que já exista (dono incluso): o login busca por
+    nome sem saber o papel, e dois donos com o mesmo nome tornariam o login um
+    sorteio de qual conta entra.
+    """
+    nome = dados.nome.strip()
+
+    existe = (
+        await sessao.execute(
+            select(Usuario).where(func.lower(Usuario.nome) == nome.lower())
+        )
+    ).scalar_one_or_none()
+    if existe is not None:
+        raise HTTPException(status.HTTP_409_CONFLICT, "Esse nome já está em uso")
+
+    usuario = Usuario(nome=nome, pin_hash=gerar_hash(dados.senha), papel=Papel.FUNCIONARIO)
+    sessao.add(usuario)
+    await sessao.flush()
+
     return await _emitir_tokens(sessao, usuario, dados.dispositivo)
 
 

@@ -40,6 +40,10 @@ const estado = {
   acessos: [],
   /** Id da sessão à espera do segundo toque, quando ela é do próprio dono. */
   confirmarAcesso: null,
+  /** Funcionários (nome, ativo), quando a folha de funcionários está aberta. */
+  funcionarios: [],
+  /** Id do funcionário à espera do segundo toque em "Excluir". */
+  confirmarExclusao: null,
   online: navigator.onLine,
   /** id do produto em edição de preço, ou null */
   editando: null,
@@ -769,6 +773,96 @@ async function removerAcesso(acesso) {
   }
 }
 
+// ============================================================== funcionários
+
+/**
+ * As contas que os funcionários criaram sozinhos na tela de vendas.
+ *
+ * Mesma ideia da folha de acessos: fica no painel do usuário porque é conta,
+ * não número — o dono abre isto quando alguém sai da loja, não todo dia.
+ */
+async function abrirFuncionarios() {
+  $("painel").hidden = true;
+  $("funcionarios").hidden = false;
+  await carregarFuncionarios();
+}
+
+async function carregarFuncionarios() {
+  const lista = $("lista-funcionarios");
+  lista.innerHTML = '<li class="fraco">Carregando…</li>';
+
+  try {
+    estado.funcionarios = await api.pedir("GET", "/usuarios");
+    desenharFuncionarios();
+  } catch (erro) {
+    lista.innerHTML = `<li class="fraco">${escapar(
+      erro instanceof api.ErroRede ? "Sem conexão com o servidor." : erro.message,
+    )}</li>`;
+  }
+}
+
+function desenharFuncionarios() {
+  const lista = $("lista-funcionarios");
+  lista.innerHTML = "";
+
+  if (!estado.funcionarios.length) {
+    lista.innerHTML = '<li class="fraco">Nenhum funcionário cadastrado ainda.</li>';
+    return;
+  }
+
+  for (const pessoa of estado.funcionarios) {
+    const li = document.createElement("li");
+    li.className = "acesso";
+    li.innerHTML =
+      `<span class="acesso__quem">` +
+      `<strong>${escapar(pessoa.nome)}</strong>` +
+      `<small>${pessoa.ativo ? "ativo" : "pausado"}</small>` +
+      `</span>` +
+      `<span class="acesso__acoes">` +
+      `<button class="acesso__pausar" data-pausar>${pessoa.ativo ? "Pausar" : "Reativar"}</button>` +
+      `<button class="acesso__x" data-excluir>Excluir</button>` +
+      `</span>`;
+
+    li.querySelector("[data-pausar]").onclick = () => pausarFuncionario(pessoa);
+    li.querySelector("[data-excluir]").onclick = () => excluirFuncionario(pessoa);
+    lista.append(li);
+  }
+}
+
+async function pausarFuncionario(pessoa) {
+  try {
+    await api.pedir("PATCH", `/usuarios/${pessoa.id}`, { ativo: !pessoa.ativo });
+    aviso(pessoa.ativo ? "Funcionário pausado" : "Funcionário reativado", "ok");
+    await carregarFuncionarios();
+  } catch (erro) {
+    aviso(
+      erro instanceof api.ErroRede ? "Sem conexão — tente de novo" : erro.message,
+      "erro",
+    );
+  }
+}
+
+/** Pede confirmação com um segundo toque — excluir não tem volta. */
+async function excluirFuncionario(pessoa) {
+  if (estado.confirmarExclusao !== pessoa.id) {
+    estado.confirmarExclusao = pessoa.id;
+    aviso("Toque em Excluir de novo pra confirmar", "erro");
+    return;
+  }
+
+  estado.confirmarExclusao = null;
+  try {
+    await api.pedir("DELETE", `/usuarios/${pessoa.id}`);
+    aviso("Funcionário excluído", "ok");
+    await carregarFuncionarios();
+  } catch (erro) {
+    aviso(
+      erro instanceof api.ErroRede ? "Sem conexão — tente de novo" : erro.message,
+      "erro",
+    );
+  }
+}
+
 // =================================================================== eventos
 
 function ligarEventos() {
@@ -795,6 +889,11 @@ function ligarEventos() {
   $("acessos-atualizar").onclick = carregarAcessos;
   for (const alvo of document.querySelectorAll("[data-fechar-acessos]")) {
     alvo.onclick = () => ($("acessos").hidden = true);
+  }
+  $("btn-funcionarios").onclick = abrirFuncionarios;
+  $("funcionarios-atualizar").onclick = carregarFuncionarios;
+  for (const alvo of document.querySelectorAll("[data-fechar-funcionarios]")) {
+    alvo.onclick = () => ($("funcionarios").hidden = true);
   }
   $("btn-sair").onclick = sair;
   $("btn-atualizar").onclick = async () => {

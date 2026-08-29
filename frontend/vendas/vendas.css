@@ -109,6 +109,16 @@
   font-size: 18px;
 }
 
+.login__link {
+  padding: 8px;
+  border: none;
+  background: none;
+  color: var(--rosa);
+  font-size: 14px;
+  font-weight: 700;
+  text-decoration: underline;
+}
+
 /* ------------------------------------------------------------------ venda */
 
 .venda {

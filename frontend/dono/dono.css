@@ -208,6 +208,27 @@
   background: var(--vermelho-fundo);
 }
 
+.acesso__acoes {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.acesso__pausar {
+  min-height: 36px;
+  padding: 0 14px;
+  border: 1px solid var(--linha);
+  border-radius: 10px;
+  color: var(--tinta);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.acesso__pausar:active {
+  background: var(--fundo);
+}
+
 /* ====================================================================== abas */
 
 .abas {

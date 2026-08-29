@@ -42,6 +42,32 @@
   </form>
 
   <p class="login__nota fraco">A senha é pedida uma vez só neste aparelho.</p>
+  <button id="link-cadastro" class="login__link" type="button">Criar minha conta</button>
+</section>
+
+<!-- ========================================================= CRIAR CONTA -->
+<!-- Só nasce FUNCIONARIO por aqui — quem é dono já existe no banco antes do
+     sistema subir. A senha é PIN de 6 números: teclado numérico, sem letra
+     pra errar com o dedo grande no balcão. -->
+<section id="tela-cadastro" class="login" hidden>
+  <h1 class="login__marca">Shalon</h1>
+  <p class="login__papel">Criar conta</p>
+
+  <form id="cadastro-form" class="login__caixa" autocomplete="on">
+    <label class="login__rotulo" for="cadastro-nome">Seu nome</label>
+    <input id="cadastro-nome" class="login__campo" type="text" name="name"
+           autocomplete="name" maxlength="80" enterkeyhint="next">
+
+    <label class="login__rotulo" for="cadastro-senha">Senha (6 números)</label>
+    <input id="cadastro-senha" class="login__campo" type="password" name="new-password"
+           autocomplete="new-password" inputmode="numeric" pattern="[0-9]{6}"
+           maxlength="6" enterkeyhint="go">
+
+    <p id="cadastro-erro" class="login__erro" hidden></p>
+    <button id="cadastro-criar" class="botao login__entrar" type="submit">CRIAR CONTA</button>
+  </form>
+
+  <button id="link-login" class="login__link" type="button">Já tenho conta</button>
 </section>
 
 <!-- ============================================================== VENDA -->
