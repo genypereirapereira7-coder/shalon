@@ -4,7 +4,7 @@ from functools import lru_cache
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 from zoneinfo import ZoneInfo
 
-from pydantic import field_validator
+from pydantic import AliasChoices, Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # O que o `sslmode` do libpq quer dizer pro asyncpg, que usa outro nome e outro
@@ -24,7 +24,22 @@ class Config(BaseSettings):
 
     ambiente: str = "dev"
 
-    database_url: str = "postgresql+asyncpg://shalon:shalon@localhost:5432/shalon"
+    # Duas variáveis, nesta ordem: a nossa primeiro, `DATABASE_URL` depois.
+    #
+    # Serviço de banco gerenciado publica a string de conexão como
+    # `DATABASE_URL` — é o nome que o Railway, o Heroku e o Fly usam, e é o que
+    # a referência `${{Postgres.DATABASE_URL}}` do Railway preenche sozinha.
+    # Aceitar o nome de lá economiza o passo mais fácil de esquecer na hora de
+    # publicar, e o mais difícil de diagnosticar depois: sem ele o serviço sobe
+    # normalmente, com a URL de dev do padrão abaixo, e só falha quando alguém
+    # aperta um botão.
+    #
+    # `SHALON_DATABASE_URL` continua ganhando quando as duas existem: é a que
+    # alguém definiu de propósito.
+    database_url: str = Field(
+        default="postgresql+asyncpg://shalon:shalon@localhost:5432/shalon",
+        validation_alias=AliasChoices("SHALON_DATABASE_URL", "DATABASE_URL"),
+    )
 
     # Autenticação
     jwt_segredo: str = "dev-inseguro-troque-em-producao"

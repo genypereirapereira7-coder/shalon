@@ -189,6 +189,60 @@ docker compose exec api alembic upgrade head
 docker compose exec api python -m app.seed
 ```
 
+## Publicar no Railway
+
+O `railway.toml` já descreve o build, o start e o healthcheck — o Railway lê
+sozinho. O que sobra é criar o banco e três variáveis.
+
+**1. O projeto e o banco.** No painel: *New Project → Deploy from GitHub repo*,
+escolha `shalon`. Depois, dentro do projeto, *New → Database → Add PostgreSQL*.
+
+**2. As três variáveis**, no serviço do app (aba *Variables*):
+
+| Variável | Valor |
+| --- | --- |
+| `SHALON_DATABASE_URL` | `${{Postgres.DATABASE_URL}}` — referência, não copie a string |
+| `SHALON_JWT_SEGREDO` | gere com o comando abaixo |
+| `SHALON_AMBIENTE` | `prod` |
+
+```bash
+python -c "import secrets; print(secrets.token_urlsafe(48))"
+```
+
+Use a **referência** `${{Postgres.DATABASE_URL}}`, não a string copiada: o
+Railway troca a senha do banco quando recria o serviço, e a referência
+acompanha. Uma string colada à mão vira um serviço que sobe verde e responde
+500 em tudo, no dia em que ninguém mexeu em nada.
+
+O formato não precisa de ajuste. O Railway entrega `postgresql://…`, e o
+`config.py` traduz pro `postgresql+asyncpg://` que a engine async usa. Se você
+esquecer a variável, o `config.py` ainda tenta o `DATABASE_URL` pelado.
+
+**3. O domínio.** Aba *Settings → Networking → Generate Domain*. O endereço
+abre direto na tela de vendas.
+
+**Se o build escolher o Python errado**, adicione `NIXPACKS_PYTHON_VERSION` =
+`3.12`. O `.python-version` costuma bastar; esta é a saída quando não basta.
+
+**Uma réplica, um worker — e isto não é economia.** O gerenciador de WebSocket
+guarda as conexões em memória do processo. Com duas réplicas, metade dos avisos
+de pedido novo cairia na réplica errada e nunca chegaria na tela. Se um dia a
+loja precisar de mais de uma, o caminho é um Redis no meio, não subir o número
+aqui.
+
+**O primeiro login.** O seed cria só o dono (`adriano`). Quem vende cria a
+própria conta pelo "Criar minha conta" na tela de vendas — nome mais um PIN de
+seis dígitos — e já entra logado, sem aprovação. O dono não libera antes; ele
+pausa ou exclui depois, pela tela dele.
+
+**Isso tem uma consequência ao publicar.** Na loja, quem alcança a tela é quem
+está atrás do balcão. Num endereço público, é qualquer um que descubra o link:
+o cadastro é aberto, então uma conta de funcionário — que enxerga o cardápio e
+lança pedido — está a um formulário de distância. Enquanto o endereço for o
+`.up.railway.app` que ninguém adivinha, o risco é pequeno; no dia em que ele
+virar um domínio divulgado, deixa de ser. O conserto natural é o dono aprovar
+antes de a conta valer, e hoje ele não existe.
+
 ## Publicar no Render
 
 O repositório já vem pronto: `render.yaml` descreve o serviço e o banco,

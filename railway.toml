@@ -1,0 +1,41 @@
+# Configuração do Railway.
+#
+# O Railway lê este arquivo sozinho a cada deploy — não há nada pra preencher
+# no painel além das variáveis de ambiente (veja o README, seção "Publicar no
+# Railway"). O `render.yaml` ao lado continua valendo pra quem preferir o
+# Render; os dois descrevem o mesmo serviço.
+#
+# Um serviço só, de propósito: o FastAPI serve a API, o WebSocket e os dois
+# PWAs na mesma origem (app/main.py). É isso que faz o `api.js` funcionar com
+# caminhos relativos — não há frontend separado pra publicar.
+
+[build]
+builder = "NIXPACKS"
+buildCommand = "pip install -r requirements.txt"
+
+[deploy]
+# Três passos antes do servidor, em ordem:
+#
+#   alembic upgrade head  cria ou atualiza o schema
+#   python -m app.seed    planta o cardápio e a conta do dono; idempotente,
+#                         não duplica nada nem desfaz preço já editado
+#   uvicorn               sobe o servidor na porta que o Railway injetar
+#
+# `--workers 1` não é economia: o gerenciador de WebSocket guarda as conexões
+# em memória do processo. Com dois workers, metade dos avisos de pedido novo
+# cairia no worker errado e nunca chegaria na tela.
+startCommand = "cd backend && alembic upgrade head && python -m app.seed && uvicorn app.main:app --host 0.0.0.0 --port $PORT --workers 1"
+
+healthcheckPath = "/health"
+
+# O padrão de 100s é curto pro primeiro deploy: nele o `alembic upgrade head`
+# cria o schema do zero e o seed insere ~150 registros antes de o Uvicorn
+# abrir a porta. Estourar o healthcheck aqui derruba um deploy que estava indo
+# bem.
+healthcheckTimeout = 300
+
+restartPolicyType = "ON_FAILURE"
+restartPolicyMaxRetries = 10
+
+# Uma réplica, pelo mesmo motivo do `--workers 1`.
+numReplicas = 1
