@@ -42,6 +42,15 @@ class Produto(Base):
     cor_botao: Mapped[str | None] = mapped_column(String(9))  # #RRGGBB
     ordem: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     ativo: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+
+    # Este produto leva bola de sorvete, e por isso a tela de vendas pergunta
+    # qual sabor do dia vai nele. É um interruptor por produto e não uma regra
+    # por categoria porque a fronteira não é limpa: o milk-shake leva bola, a
+    # água não, e o dono é quem sabe o que a máquina dele serve. Marcar produto
+    # por produto custa um toque uma vez; adivinhar errado custa uma pergunta
+    # boba na cara do cliente em cada garrafa de água vendida.
+    pede_sabor: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+
     criado_em: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=agora
     )

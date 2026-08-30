@@ -13,7 +13,7 @@ from sqlalchemy import text
 
 from app.config import get_config
 from app.db import engine
-from app.rotas import auth, cardapio, pedidos, relatorios, usuarios, ws
+from app.rotas import auth, cardapio, pedidos, relatorios, sabores, usuarios, ws
 from app.servicos.dia_operacional import dia_atual
 
 log = logging.getLogger("shalon")
@@ -148,6 +148,7 @@ app.include_router(auth.rotas)
 app.include_router(cardapio.rotas)
 app.include_router(pedidos.rotas)
 app.include_router(relatorios.rotas)
+app.include_router(sabores.rotas)
 app.include_router(usuarios.rotas)
 app.include_router(ws.rotas)
 

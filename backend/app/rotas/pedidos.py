@@ -333,6 +333,8 @@ def _saida(pedido: Pedido, *, duplicado: bool = False, total_divergente: bool = 
                     )
                     for o in i.opcoes
                 ],
+                sabor_tipo=i.sabor_tipo,
+                sabor=i.sabor_snapshot,
             )
             for i in pedido.itens
         ],

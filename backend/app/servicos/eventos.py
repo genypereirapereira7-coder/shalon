@@ -42,6 +42,7 @@ class Evento(str, enum.Enum):
     IMPRESSORA_STATUS = "impressora.status"
     USUARIO_DESATIVADO = "usuario.desativado"
     USUARIO_PENDENTE = "usuario.pendente"
+    SABOR_ALTERADO = "sabor.alterado"
 
 
 # Quem recebe o quê. Mora aqui, junto do enum, pra que o destino seja uma
@@ -67,6 +68,10 @@ DESTINOS: dict[Evento, tuple[Papel, ...]] = {
     # na hora: uma pessoa parada no balcão esperando pra começar a vender é a
     # diferença entre um toque agora e um telefonema.
     Evento.USUARIO_PENDENTE: (Papel.DONO,),
+    # O balcão precisa saber na hora: é ele que oferece o sabor ao cliente.
+    # A cozinha e o dono entram porque a comanda e o painel mostram o que
+    # foi vendido, e o segundo aparelho do dono não pode ficar defasado.
+    Evento.SABOR_ALTERADO: (Papel.FUNCIONARIO, Papel.COZINHA, Papel.DONO),
 }
 
 

@@ -771,3 +771,11 @@
   line-height: 1.5;
   color: var(--tinta);
 }
+
+/* O sabor na linha do carrinho. Cor própria e acima dos acompanhamentos: é o
+   que o funcionário confere em voz alta com o cliente antes de finalizar. */
+.item__sabor {
+  display: block;
+  color: var(--roxo);
+  font-weight: 600;
+}

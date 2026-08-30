@@ -3,13 +3,14 @@ from app.models.cardapio import Categoria, PrecoHistorico, Produto
 from app.models.fechamento import FechamentoDia
 from app.models.opcoes import Opcao, OpcaoGrupo, PedidoItemOpcao, ProdutoOpcaoGrupo
 from app.models.pedido import ContadorDia, Pedido, PedidoItem, StatusPedido
+from app.models.sabor import EscolhaSabor, SaborDoDia
 from app.models.usuario import Papel, SessaoAuth, Usuario
 
 __all__ = [
     "Base",
-    "agora",
     "Categoria",
     "ContadorDia",
+    "EscolhaSabor",
     "FechamentoDia",
     "Opcao",
     "OpcaoGrupo",
@@ -20,7 +21,9 @@ __all__ = [
     "PrecoHistorico",
     "Produto",
     "ProdutoOpcaoGrupo",
+    "SaborDoDia",
     "SessaoAuth",
     "StatusPedido",
     "Usuario",
+    "agora",
 ]

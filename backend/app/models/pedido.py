@@ -20,6 +20,7 @@ from sqlalchemy import (
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base, agora
+from app.models.sabor import EscolhaSabor
 from app.models.usuario import Usuario
 
 
@@ -123,6 +124,18 @@ class PedidoItem(Base):
 
     # Já inclui os adicionais pagos: (preço do produto + extras) × quantidade.
     subtotal_centavos: Mapped[int] = mapped_column(Integer, nullable=False)
+
+    # Qual sabor do dia foi esta bola. Nulo em tudo que não leva sorvete — e
+    # também no que leva, se o dono ainda não tinha preenchido os sabores.
+    #
+    # Dois campos e não um: o tipo serve pra contar ("quantos mistos saíram
+    # hoje?"), e o texto é o que a comanda imprime. O texto é congelado pela
+    # mesma razão que o nome e o preço são: amanhã a máquina tem outro sabor, e
+    # sem o snapshot a comanda de ontem passaria a dizer o sabor de hoje.
+    sabor_tipo: Mapped[EscolhaSabor | None] = mapped_column(
+        Enum(EscolhaSabor, name="escolha_sabor")
+    )
+    sabor_snapshot: Mapped[str | None] = mapped_column(String(130))
 
     pedido: Mapped[Pedido] = relationship(back_populates="itens")
 

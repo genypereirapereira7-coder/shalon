@@ -34,6 +34,8 @@ class ProdutoSaida(BaseModel):
     cor_botao: str | None
     ordem: int
     ativo: bool
+    # A tela de vendas usa isto pra decidir se pergunta o sabor do dia.
+    pede_sabor: bool = False
     grupos: list[GrupoSaida] = []
 
     model_config = {"from_attributes": True}
@@ -69,6 +71,7 @@ class ProdutoEntrada(BaseModel):
     preco_centavos: int = Field(ge=0)
     cor_botao: str | None = Field(default=None, pattern=r"^#[0-9a-fA-F]{6}$")
     ordem: int = 0
+    pede_sabor: bool = False
 
 
 class ProdutoPatch(BaseModel):
@@ -77,6 +80,7 @@ class ProdutoPatch(BaseModel):
     cor_botao: str | None = Field(default=None, pattern=r"^#[0-9a-fA-F]{6}$")
     ordem: int | None = None
     ativo: bool | None = None
+    pede_sabor: bool | None = None
 
 
 class CategoriaEntrada(BaseModel):

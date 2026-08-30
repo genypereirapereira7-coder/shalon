@@ -11,6 +11,7 @@ from datetime import date, datetime
 from pydantic import BaseModel, Field
 
 from app.models.pedido import StatusPedido
+from app.models.sabor import EscolhaSabor
 from app.schemas.tipos import Utc
 
 
@@ -20,6 +21,12 @@ class ItemEntrada(BaseModel):
     # Ids das opções escolhidas (acompanhamentos e adicionais). O servidor
     # confere se cabem na cota do produto e recalcula o preço extra.
     opcoes: list[int] = Field(default_factory=list, max_length=30)
+
+    # Qual sabor do dia, nos produtos que pedem. Só o tipo vem do celular; o
+    # texto é resolvido no servidor, pelo sabor que valia no instante da venda.
+    # Mandar o nome daqui deixaria o aparelho com cache velho gravar
+    # "Chocolate" num dia em que a máquina já está com creme.
+    sabor: EscolhaSabor | None = None
 
 
 class PedidoEntrada(BaseModel):
@@ -49,6 +56,10 @@ class ItemSaida(BaseModel):
     # (preço do produto + extras) × quantidade
     subtotal_centavos: int
     opcoes: list[OpcaoEscolhida] = []
+
+    # Como estava na hora da venda. `sabor` é o texto que a comanda imprime.
+    sabor_tipo: EscolhaSabor | None = None
+    sabor: str | None = None
 
 
 class PedidoSaida(BaseModel):

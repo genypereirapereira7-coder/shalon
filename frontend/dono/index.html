@@ -98,9 +98,33 @@
 
   <!-- --------------------------------------------------------- CARDÁPIO -->
   <main id="aba-cardapio" class="conteudo" hidden>
+    <!-- Primeiro bloco da aba de propósito: é o que muda todo dia, enquanto o
+         preço muda uma vez por mês. Quem abre a loja de manhã abre aqui. -->
+    <section class="bloco sabores">
+      <div class="bloco__cabeca">
+        <h2 class="bloco__titulo">Sorvete de hoje</h2>
+      </div>
+      <p class="fraco">
+        Os dois sabores que estão na máquina agora. O balcão escolhe entre eles
+        em cada item marcado com 🍦 — ou <strong>misto</strong>, que é os dois
+        juntos.
+      </p>
+
+      <label class="sabores__rotulo" for="sabor1">Sabor 1</label>
+      <input id="sabor1" class="sabores__campo" type="text" maxlength="60"
+             autocomplete="off" placeholder="Ex.: Chocolate">
+
+      <label class="sabores__rotulo" for="sabor2">Sabor 2</label>
+      <input id="sabor2" class="sabores__campo" type="text" maxlength="60"
+             autocomplete="off" placeholder="Ex.: Morango">
+
+      <button id="sabores-salvar" class="botao" type="button">SALVAR SABORES</button>
+      <p id="sabores-quando" class="fraco sabores__quando"></p>
+    </section>
+
     <p class="fraco conteudo__dica">
-      Toque no preço pra mudar. O celular da loja pega o preço novo na próxima
-      atualização do cardápio.
+      Toque no preço pra mudar. O 🍦 diz se o produto pergunta o sabor do dia.
+      O celular da loja pega tudo na próxima atualização do cardápio.
     </p>
     <div id="lista-cardapio"></div>
   </main>

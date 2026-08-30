@@ -71,6 +71,16 @@ export function montar(pedido, { reimpressao = false, largura = LARGURA } = {}) 
 
   for (const item of pedido.itens ?? []) {
     escrever(linhaItem(item, largura));
+    // Antes dos acompanhamentos: é o sabor que diz o que servir, e os
+    // acompanhamentos são o que vai por cima. Quem monta lê de cima pra baixo.
+    //
+    // `sabor` é o que o servidor devolveu; `sabor_texto` é o que o celular
+    // resolveu na hora de montar. Os dois existem porque a comanda é impressa
+    // antes de o pedido subir — numa fila offline o primeiro é `undefined`, e
+    // sem o segundo a comanda sairia sem o sabor justamente no dia em que a
+    // internet caiu.
+    const sabor = item.sabor ?? item.sabor_texto;
+    if (sabor) escrever(linhaSabor(sabor, largura));
     for (const opcao of item.opcoes ?? []) escrever(linhaOpcao(opcao, largura));
   }
 
@@ -95,6 +105,17 @@ function linhaItem(item, largura) {
   const valor = moeda(item.subtotal_centavos);
   const espaco = Math.max(largura - prefixo.length - valor.length - 1, 1);
   return `${prefixo}${cortar(item.nome, espaco).padEnd(espaco)} ${valor}`;
+}
+
+/**
+ * O sabor, indentado sob o item e em maiúsculas.
+ *
+ * Maiúsculas porque numa térmica de 32 colunas, com papel gasto e a cozinha
+ * lendo de relance, é a linha que não pode ser confundida com um
+ * acompanhamento. Ela responde a única pergunta que impede de montar o pedido.
+ */
+function linhaSabor(texto, largura) {
+  return cortar(`   * ${texto.toUpperCase()}`, largura);
 }
 
 /**

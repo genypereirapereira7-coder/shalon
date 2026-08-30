@@ -653,3 +653,60 @@
   font-weight: 700;
   min-height: var(--alvo);
 }
+
+/* --------------------------------------------------------- sabor do dia
+   Primeiro bloco da aba de cardápio: é o que muda todo dia. */
+.sabores__rotulo {
+  display: block;
+  margin: 12px 0 4px;
+  font-weight: 600;
+  color: var(--tinta-fraca);
+}
+
+.sabores__campo {
+  width: 100%;
+  min-height: var(--alvo);
+  padding: 10px 12px;
+  border: 1px solid var(--linha);
+  border-radius: var(--raio);
+  background: var(--papel);
+  color: var(--tinta);
+  font-size: 1rem;
+}
+
+.sabores__campo:focus {
+  outline: 2px solid var(--rosa);
+  outline-offset: 1px;
+}
+
+.sabores .botao {
+  margin-top: 14px;
+  width: 100%;
+}
+
+.sabores__quando {
+  margin: 8px 0 0;
+  text-align: center;
+}
+
+/* O 🍦 da linha do produto. Apagado quando o produto não pede sabor — o
+   contraste entre aceso e apagado é o que se lê de relance numa lista de
+   vinte itens. */
+.linha__sabor {
+  background: none;
+  border: 0;
+  padding: 0 8px;
+  font-size: 1.15rem;
+  min-width: var(--alvo);
+  min-height: var(--alvo);
+  cursor: pointer;
+}
+
+.linha__sabor[data-ligado="0"] {
+  opacity: 0.25;
+  filter: grayscale(1);
+}
+
+.linha__sabor[data-ligado="1"] {
+  opacity: 1;
+}

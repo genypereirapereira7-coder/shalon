@@ -23,8 +23,10 @@ from app.models.cardapio import Produto
 from app.models.fechamento import FechamentoDia
 from app.models.opcoes import Opcao, PedidoItemOpcao, ProdutoOpcaoGrupo
 from app.models.pedido import ContadorDia, Pedido, PedidoItem
+from app.models.sabor import EscolhaSabor
 from app.models.usuario import Usuario
 from app.schemas.pedido import ItemEntrada, PedidoEntrada
+from app.servicos import sabores
 from app.servicos.dia_operacional import atraso_aceitavel, dia_operacional
 from app.servicos.precos import preco_em
 
@@ -113,12 +115,17 @@ async def _montar_itens(
     # curta é comanda que a cozinha lê rápido. Mas dois açaís só viram "2x" se
     # levarem os mesmos acompanhamentos: um com granola e outro com paçoca são
     # duas linhas, senão a cozinha monta os dois iguais.
-    quantidades: OrderedDict[tuple[int, tuple[int, ...]], int] = OrderedDict()
+    #
+    # O sabor entra na chave pela mesma razão: uma casquinha de chocolate e uma
+    # de creme somariam "2x Casquinha" e a cozinha serviria as duas iguais.
+    quantidades: OrderedDict[tuple[int, tuple[int, ...], EscolhaSabor | None], int] = (
+        OrderedDict()
+    )
     for item in entradas:
-        chave = (item.produto_id, tuple(sorted(item.opcoes)))
+        chave = (item.produto_id, tuple(sorted(item.opcoes)), item.sabor)
         quantidades[chave] = quantidades.get(chave, 0) + item.quantidade
 
-    produto_ids = {pid for pid, _ in quantidades}
+    produto_ids = {pid for pid, _, _ in quantidades}
     consulta = select(Produto).where(Produto.id.in_(produto_ids))
     produtos = {p.id: p for p in (await sessao.execute(consulta)).scalars()}
 
@@ -127,11 +134,22 @@ async def _montar_itens(
 
     catalogo, vinculos = await _carregar_opcoes(sessao, produto_ids, quantidades)
 
+    # Uma leitura só, fora do laço: o sabor é o mesmo pro pedido inteiro, e
+    # buscá-lo por item faria uma consulta por linha da comanda.
+    sabor_atual = await sabores.ler(sessao)
+
     itens: list[PedidoItem] = []
     total = 0
-    for (produto_id, opcao_ids), quantidade in quantidades.items():
+    for (produto_id, opcao_ids, sabor), quantidade in quantidades.items():
         produto = produtos[produto_id]
         escolhidas = _conferir_opcoes(produto, vinculos.get(produto_id, []), opcao_ids, catalogo)
+
+        # Sabor em produto que não pede é descartado, não é erro: o celular
+        # pode estar com o cardápio velho em cache, de quando o dono ainda
+        # marcava este produto. Recusar a venda por isso pararia a fila por uma
+        # divergência que não muda preço nem o que o cliente leva.
+        sabor_do_item = sabor if produto.pede_sabor else None
+        sabor_texto = sabores.texto(sabor_do_item, sabor_atual)
 
         # Produto desativado depois da venda ainda entra: a venda aconteceu.
         # O que não pode é produto que nunca existiu (checado acima).
@@ -147,6 +165,8 @@ async def _montar_itens(
                 preco_unit_centavos_snapshot=preco,
                 quantidade=quantidade,
                 subtotal_centavos=subtotal,
+                sabor_tipo=sabor_do_item,
+                sabor_snapshot=sabor_texto,
                 opcoes=[
                     PedidoItemOpcao(
                         opcao_id=opcao.id,
@@ -164,10 +184,10 @@ async def _montar_itens(
 async def _carregar_opcoes(
     sessao: AsyncSession,
     produto_ids: set[int],
-    quantidades: OrderedDict[tuple[int, tuple[int, ...]], int],
+    quantidades: OrderedDict[tuple[int, tuple[int, ...], EscolhaSabor | None], int],
 ) -> tuple[dict[int, Opcao], dict[int, list[ProdutoOpcaoGrupo]]]:
     """Busca as opções escolhidas e o que cada produto tem direito de oferecer."""
-    escolhidas = {oid for _, ids in quantidades for oid in ids}
+    escolhidas = {oid for _, ids, _ in quantidades for oid in ids}
 
     catalogo: dict[int, Opcao] = {}
     if escolhidas:

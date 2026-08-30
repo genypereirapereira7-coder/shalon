@@ -27,6 +27,38 @@ polling continua ligado por baixo nas duas telas**, só mais espaçado — nenhu
 delas depende do socket pra estar correta, e se ele nunca conectar tudo funciona
 mais devagar em vez de quebrar.
 
+### O sabor do dia
+
+Uma sorveteria de bola não vende "sorvete de chocolate" como item de cardápio:
+vende uma casquinha, e o que vai dentro são os dois sabores que estão na
+máquina naquele dia. O cardápio é estável; o sabor muda de manhã.
+
+**Na tela do dono**, aba *Cardápio*, primeiro bloco: dois campos, *Sabor 1* e
+*Sabor 2*. Ao lado do preço de cada produto há um 🍦 — aceso quer dizer "este
+pergunta o sabor". A água mineral fica apagada, a casquinha acesa. É um
+interruptor por produto e não uma regra por categoria porque a fronteira não é
+limpa: o milk-shake leva bola, e só o dono sabe o que a máquina dele serve.
+
+**Na tela de vendas**, tocar num produto aceso abre a folha de escolhas com o
+sabor no topo — os dois nomes do dia mais **Misto**, que é os dois juntos. O
+sabor vem antes dos acompanhamentos porque é ele que define o pedido.
+
+Três decisões que valem explicação:
+
+**Nada trava se o dono não preencher.** Manhã sem sabor definido é venda
+normal: a folha não pergunta, a comanda sai sem a linha. Barrar a venda
+transformaria um esquecimento de dois campos numa fila parada.
+
+**Duas casquinhas de sabores diferentes são duas linhas na comanda.** Somadas
+num "2x Casquinha", a cozinha serviria as duas iguais.
+
+**O sabor vendido é congelado no item.** Amanhã a máquina tem creme, e a
+comanda de ontem continua dizendo chocolate — pelo mesmo motivo que o nome e o
+preço do produto já eram congelados.
+
+A troca chega no balcão na hora, pelo WebSocket: sem isso, o celular que já
+está com a tela aberta ofereceria o sabor de ontem até alguém recarregar.
+
 ### A comanda
 
 Quem imprime é o celular que vendeu. Assim que o servidor confirma o pedido — e

@@ -42,6 +42,9 @@ const estado = {
   confirmarAcesso: null,
   /** Funcionários (nome, ativo), quando a folha de funcionários está aberta. */
   funcionarios: [],
+
+  /** Os dois sabores que estão na máquina agora. */
+  sabores: { sabor1: null, sabor2: null, atualizado_em: null },
   /** Id do funcionário à espera do segundo toque em "Excluir". */
   confirmarExclusao: null,
   online: navigator.onLine,
@@ -199,6 +202,13 @@ function aplicarEvento(evento, dados) {
   // Alguém pediu uma conta agora. Se a folha de funcionários está aberta, ela
   // se atualiza sozinha; se não está, o aviso é o que evita a pessoa ficar
   // esperando no balcão enquanto o dono mexe em outra aba sem saber de nada.
+  // Outro aparelho do dono trocou o sabor. Sem isto, este celular continuaria
+  // mostrando o de ontem até alguém recarregar a página.
+  if (evento === "sabor.alterado") {
+    estado.sabores = { ...estado.sabores, ...dados };
+    desenharSabores();
+  }
+
   if (evento === "usuario.pendente") {
     if (!$("funcionarios").hidden) {
       carregarFuncionarios();
@@ -221,6 +231,9 @@ function trocarAba(qual) {
   // Carregamento sob demanda: quem abre o app pra ver o total do dia não
   // precisa baixar o cardápio inteiro nem o histórico de fechamentos.
   if (qual === "cardapio" && !estado.cardapio) carregarCardapio();
+  // Sempre, e não só na primeira vez: o sabor é a informação mais perecível
+  // desta tela, e abrir a aba é justamente o gesto de quem quer conferi-lo.
+  if (qual === "cardapio") carregarSabores();
   if (qual === "fechamento") carregarFechamento();
 }
 
@@ -437,6 +450,21 @@ function linhaProduto(produto) {
     document.querySelector(".editor__campo")?.select();
   };
 
+  // O interruptor do sabor. Fica apagado quando o produto não leva bola: a
+  // água mineral não pergunta sabor, e o dono é quem sabe onde está a
+  // fronteira — por isso é um toque por produto, e não uma regra por
+  // categoria.
+  const sabor = document.createElement("button");
+  sabor.className = "linha__sabor";
+  sabor.dataset.ligado = produto.pede_sabor ? "1" : "0";
+  sabor.textContent = "🍦";
+  sabor.title = produto.pede_sabor
+    ? "Pergunta o sabor do dia — toque pra parar de perguntar"
+    : "Não pergunta o sabor — toque pra passar a perguntar";
+  sabor.setAttribute("aria-label", `${produto.nome}: ${sabor.title}`);
+  sabor.setAttribute("aria-pressed", produto.pede_sabor ? "true" : "false");
+  sabor.onclick = () => alternarSabor(produto);
+
   const ativo = document.createElement("button");
   ativo.className = "linha__ativo";
   ativo.textContent = produto.ativo ? "👁" : "🚫";
@@ -444,7 +472,7 @@ function linhaProduto(produto) {
   ativo.setAttribute("aria-label", ativo.title);
   ativo.onclick = () => alternarAtivo(produto);
 
-  linha.append(preco, ativo);
+  linha.append(preco, sabor, ativo);
   return linha;
 }
 
@@ -539,6 +567,84 @@ async function alternarAtivo(produto) {
   } catch (erro) {
     if (erro instanceof api.ErroRede) marcarOnline(false);
     aviso(erro instanceof api.ErroRede ? "Sem conexão" : erro.message, "erro");
+  }
+}
+
+async function alternarSabor(produto) {
+  try {
+    const atualizado = await api.pedir("PATCH", `/produtos/${produto.id}`, {
+      pede_sabor: !produto.pede_sabor,
+    });
+    Object.assign(produto, atualizado);
+    marcarOnline(true);
+    desenharCardapio();
+    aviso(
+      produto.pede_sabor
+        ? `${produto.nome} agora pergunta o sabor`
+        : `${produto.nome} não pergunta mais o sabor`,
+      "ok",
+    );
+  } catch (erro) {
+    if (erro instanceof api.ErroRede) marcarOnline(false);
+    aviso(erro instanceof api.ErroRede ? "Sem conexão" : erro.message, "erro");
+  }
+}
+
+// =============================================================== sabor do dia
+
+async function carregarSabores() {
+  try {
+    estado.sabores = await api.pedir("GET", "/sabores");
+    desenharSabores();
+  } catch (erro) {
+    // Sem conexão os campos ficam como estão. Não é motivo pra assustar
+    // ninguém: o resto da aba de cardápio continua utilizável.
+    if (erro instanceof api.ErroRede) marcarOnline(false);
+  }
+}
+
+function desenharSabores() {
+  // Só preenche o que não está sendo digitado agora: sobrescrever o campo em
+  // foco apagaria o que o dono está escrevendo quando o evento de outro
+  // aparelho chegasse no meio.
+  const foco = document.activeElement;
+  for (const [campo, valorAtual] of [
+    ["sabor1", estado.sabores.sabor1],
+    ["sabor2", estado.sabores.sabor2],
+  ]) {
+    const el = $(campo);
+    if (el !== foco) el.value = valorAtual ?? "";
+  }
+
+  const quando = estado.sabores.atualizado_em;
+  $("sabores-quando").textContent = quando
+    ? `Trocado em ${new Date(quando).toLocaleString("pt-BR")}`
+    : "Nenhum sabor definido — o balcão não vai perguntar nada.";
+}
+
+async function salvarSabores() {
+  const botao = $("sabores-salvar");
+  botao.disabled = true;
+  botao.textContent = "SALVANDO…";
+  try {
+    estado.sabores = await api.pedir("PUT", "/sabores", {
+      sabor1: $("sabor1").value,
+      sabor2: $("sabor2").value,
+    });
+    marcarOnline(true);
+    desenharSabores();
+    aviso(
+      estado.sabores.sabor1 || estado.sabores.sabor2
+        ? "Sabor de hoje atualizado"
+        : "Sabores apagados — o balcão não vai perguntar",
+      "ok",
+    );
+  } catch (erro) {
+    if (erro instanceof api.ErroRede) marcarOnline(false);
+    aviso(erro instanceof api.ErroRede ? "Sem conexão" : erro.message, "erro");
+  } finally {
+    botao.disabled = false;
+    botao.textContent = "SALVAR SABORES";
   }
 }
 
@@ -931,6 +1037,7 @@ function ligarEventos() {
     alvo.onclick = () => ($("acessos").hidden = true);
   }
   $("btn-funcionarios").onclick = abrirFuncionarios;
+  $("sabores-salvar").onclick = salvarSabores;
   $("funcionarios-atualizar").onclick = carregarFuncionarios;
   for (const alvo of document.querySelectorAll("[data-fechar-funcionarios]")) {
     alvo.onclick = () => ($("funcionarios").hidden = true);
