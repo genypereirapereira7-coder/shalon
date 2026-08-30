@@ -26,6 +26,7 @@ from sqlalchemy import select
 
 from app.config import get_config
 from app.db import Sessao
+from app.models.base import agora
 from app.models.cardapio import Categoria, Produto
 from app.models.opcoes import Opcao, OpcaoGrupo, ProdutoOpcaoGrupo
 from app.models.usuario import Papel, Usuario
@@ -281,7 +282,18 @@ async def semear(detalhado: bool = True) -> None:
                 await sessao.execute(select(Usuario).where(Usuario.nome == nome))
             ).scalar_one_or_none()
             if existente is None:
-                sessao.add(Usuario(nome=nome, pin_hash=gerar_hash(segredo), papel=papel))
+                # `aprovado_em` preenchido: conta que nasce aqui não passa
+                # pela fila de liberação do dono. O dono é quem libera os
+                # outros — não faria sentido esperar a si mesmo —, e a conta
+                # de máquina do agente não aparece em tela nenhuma.
+                sessao.add(
+                    Usuario(
+                        nome=nome,
+                        pin_hash=gerar_hash(segredo),
+                        papel=papel,
+                        aprovado_em=agora(),
+                    )
+                )
                 criados.append(f"usuário {nome} ({papel.value})")
 
         grupos = await _semear_grupos(sessao, criados, ajustados)

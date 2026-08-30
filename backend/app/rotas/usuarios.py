@@ -5,6 +5,7 @@ from sqlalchemy import delete, select
 from sqlalchemy.exc import IntegrityError
 
 from app.dependencias import SessaoDep, SoDono
+from app.models.base import agora
 from app.models.usuario import Papel, SessaoAuth, Usuario
 from app.schemas.usuario import AtivoEntrada, FuncionarioResumo
 from app.servicos.eventos import Evento, publicar_apos_commit
@@ -35,6 +36,14 @@ async def pausar_ou_reativar(
     usuario = await sessao.get(Usuario, usuario_id)
     if usuario is None or usuario.papel != Papel.FUNCIONARIO:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Funcionário não existe")
+
+    # Liberar pela primeira vez carimba a data; pausar e reativar depois não a
+    # apaga. É o carimbo que faz a tela do dono distinguir "esperando
+    # liberação" de "pausei esta pessoa de propósito" — apagá-lo ao pausar
+    # devolveria a conta pausada pra fila de aprovação, onde ela pareceria uma
+    # novata esperando um toque.
+    if dados.ativo and usuario.aprovado_em is None:
+        usuario.aprovado_em = agora()
 
     usuario.ativo = dados.ativo
     await sessao.flush()

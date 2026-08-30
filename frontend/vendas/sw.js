@@ -12,7 +12,7 @@
  * antigo e evita o PWA congelado numa versão de duas semanas atrás.
  */
 
-const VERSAO = "v8";
+const VERSAO = "v9";
 const CACHE = `shalon-vendas-${VERSAO}`;
 
 const CASCA = [

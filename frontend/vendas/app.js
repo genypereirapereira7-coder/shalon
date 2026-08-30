@@ -113,6 +113,10 @@ function mostrarCadastro() {
   $("tela-cadastro").hidden = false;
   $("cadastro-erro").hidden = true;
   $("cadastro-senha").value = "";
+  // Volta ao formulário: quem chega aqui pela segunda vez não pode encontrar
+  // o "Conta criada" da vez anterior.
+  $("cadastro-form").hidden = false;
+  $("cadastro-pronto").hidden = true;
 }
 
 async function entrar() {
@@ -170,7 +174,12 @@ async function criarConta() {
   try {
     await api.cadastrar(nome, senha);
     $("cadastro-senha").value = "";
-    await abrirVenda();
+    // Não entra: a conta nasce esperando o dono liberar. O formulário sai da
+    // frente e dá lugar ao aviso — deixá-lo ali, com o botão "CRIAR CONTA"
+    // ainda apertável, faria a pessoa tentar de novo e tomar "esse nome já
+    // está em uso" como se tivesse feito algo errado.
+    $("cadastro-form").hidden = true;
+    $("cadastro-pronto").hidden = false;
   } catch (erro) {
     erroEl.textContent =
       erro instanceof api.ErroRede
@@ -1067,6 +1076,7 @@ function ligarEventos() {
     criarConta();
   });
   $("link-cadastro").onclick = mostrarCadastro;
+  $("cadastro-voltar").onclick = mostrarLogin;
   $("link-login").onclick = mostrarLogin;
 
   // --- venda

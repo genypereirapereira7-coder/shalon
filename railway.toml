@@ -21,10 +21,23 @@ buildCommand = "pip install -r requirements.txt"
 #                         não duplica nada nem desfaz preço já editado
 #   uvicorn               sobe o servidor na porta que o Railway injetar
 #
+# `--proxy-headers --forwarded-allow-ips='*'` conserta uma cegueira que só
+# aparece atrás de um proxy. O Uvicorn só confia no `X-Forwarded-For` vindo de
+# 127.0.0.1, e quem entrega a requisição aqui é a borda do Railway — então,
+# sem isto, *todo mundo* chega com o mesmo IP aos olhos do app. A trava de
+# tentativas de login (`seguranca.py`) usa IP+nome como chave: com um IP só,
+# cinco chutes no nome "adriano" trancam o dono de verdade por cinco minutos.
+# Bloqueio remoto de graça, e ninguém entendendo por quê.
+#
+# O `'*'` só é seguro porque a borda do Railway reescreve o `X-Forwarded-For`
+# em vez de repassar o que o cliente mandou. Num host que não faça isso, o
+# atacante forjaria o cabeçalho e escaparia da trava — ali o valor certo é o
+# IP do proxy, não `*`.
+#
 # `--workers 1` não é economia: o gerenciador de WebSocket guarda as conexões
 # em memória do processo. Com dois workers, metade dos avisos de pedido novo
 # cairia no worker errado e nunca chegaria na tela.
-startCommand = "cd backend && alembic upgrade head && python -m app.seed && uvicorn app.main:app --host 0.0.0.0 --port $PORT --workers 1"
+startCommand = "cd backend && alembic upgrade head && python -m app.seed && uvicorn app.main:app --host 0.0.0.0 --port $PORT --workers 1 --proxy-headers --forwarded-allow-ips='*'"
 
 healthcheckPath = "/health"
 

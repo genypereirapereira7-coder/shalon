@@ -24,6 +24,19 @@ class CadastroEntrada(BaseModel):
         return valor
 
 
+class CadastroSaida(BaseModel):
+    """O que a tela de vendas recebe depois de criar a conta.
+
+    Não há token aqui, e é esse o ponto: antes o cadastro devolvia a sessão
+    pronta e a pessoa entrava vendendo no mesmo toque. Num endereço público
+    isso é uma conta de funcionário a um formulário de distância de qualquer
+    um que descubra o link.
+    """
+
+    nome: str
+    aguardando_liberacao: bool = True
+
+
 class FuncionarioResumo(BaseModel):
     """Uma linha na lista de funcionários que o dono gerencia."""
 
@@ -31,6 +44,11 @@ class FuncionarioResumo(BaseModel):
     nome: str
     ativo: bool
     criado_em: Utc
+    aprovado_em: Utc | None = None
+
+    @property
+    def aguardando(self) -> bool:
+        return self.aprovado_em is None and not self.ativo
 
     model_config = {"from_attributes": True}
 

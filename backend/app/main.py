@@ -79,6 +79,55 @@ app.add_middleware(
 
 
 @app.middleware("http")
+async def cabecalhos_de_seguranca(requisicao, proxima):
+    """Os cabeçalhos que o Caddy punha e a hospedagem gerenciada não põe.
+
+    Eles moravam no `Caddyfile`, e funcionaram enquanto o sistema rodava atrás
+    dele numa VPS. No Railway e no Render não há Caddy nenhum — o Uvicorn
+    responde direto — e as proteções sumiram junto com o proxy, sem nada
+    quebrar e sem ninguém notar. Aqui elas passam a viajar com a aplicação, o
+    que também as leva pro `dev.py` e pros testes.
+
+    Cada um resolve uma coisa concreta:
+
+    - `X-Content-Type-Options` impede o navegador de adivinhar o tipo de um
+      arquivo e executar como script algo que servimos como texto.
+    - `X-Frame-Options` e `frame-ancestors` barram clickjacking: a tela de
+      vendas dentro de um iframe de outro site, com um botão invisível por
+      cima do "FINALIZAR".
+    - `Referrer-Policy` evita vazar o caminho da página pra fora.
+    - A CSP é a que faz trabalho de verdade: mesmo que um nome de produto
+      digitado pelo dono escape do `escapar()` do frontend, o navegador se
+      recusa a executar script que não venha da própria origem.
+    """
+    resposta = await proxima(requisicao)
+
+    resposta.headers.setdefault("X-Content-Type-Options", "nosniff")
+    resposta.headers.setdefault("X-Frame-Options", "DENY")
+    resposta.headers.setdefault("Referrer-Policy", "same-origin")
+    # O sistema não usa câmera, microfone nem localização em tela nenhuma.
+    resposta.headers.setdefault(
+        "Permissions-Policy", "camera=(), microphone=(), geolocation=(), payment=()"
+    )
+
+    if cfg.csp:
+        resposta.headers.setdefault("Content-Security-Policy", cfg.csp)
+
+    # Só sobre HTTPS: mandar HSTS numa resposta HTTP é ignorado pelo navegador,
+    # e em desenvolvimento (http://127.0.0.1) seria um tiro no pé — o navegador
+    # passaria a exigir HTTPS do localhost e a tela pararia de abrir.
+    #
+    # Este `scheme` só diz "https" porque o Uvicorn sobe com `--proxy-headers`
+    # e confia no `X-Forwarded-Proto` do proxy (veja o railway.toml).
+    if cfg.producao and requisicao.url.scheme == "https":
+        resposta.headers.setdefault(
+            "Strict-Transport-Security", f"max-age={cfg.hsts_max_age}"
+        )
+
+    return resposta
+
+
+@app.middleware("http")
 async def nao_cachear_service_worker(requisicao, proxima):
     """Service worker nunca em cache — a mesma regra que o Caddyfile aplica.
 

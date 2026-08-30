@@ -195,6 +195,17 @@ function aplicarEvento(evento, dados) {
   if (evento === "preco.alterado" && estado.cardapio && estado.editando === null) {
     carregarCardapio();
   }
+
+  // Alguém pediu uma conta agora. Se a folha de funcionários está aberta, ela
+  // se atualiza sozinha; se não está, o aviso é o que evita a pessoa ficar
+  // esperando no balcão enquanto o dono mexe em outra aba sem saber de nada.
+  if (evento === "usuario.pendente") {
+    if (!$("funcionarios").hidden) {
+      carregarFuncionarios();
+    } else {
+      aviso(`${dados?.nome ?? "Alguém"} pediu acesso — libere em Funcionários`, "ok");
+    }
+  }
 }
 
 function trocarAba(qual) {
@@ -810,16 +821,32 @@ function desenharFuncionarios() {
     return;
   }
 
-  for (const pessoa of estado.funcionarios) {
+  // Quem espera liberação vem primeiro. É a única linha desta tela que pede
+  // uma decisão agora — tem gente parada no balcão esperando pra trabalhar —
+  // e no fim da lista, embaixo da equipe inteira, ela passaria batida.
+  const ordenados = [...estado.funcionarios].sort(
+    (a, b) => Number(aguardando(b)) - Number(aguardando(a)),
+  );
+
+  for (const pessoa of ordenados) {
+    const espera = aguardando(pessoa);
     const li = document.createElement("li");
-    li.className = "acesso";
+    li.className = espera ? "acesso acesso--espera" : "acesso";
+
+    // Três estados, não dois. "Pausado" e "esperando liberação" são os dois
+    // `ativo: false`, mas significam o oposto um do outro: um é alguém que o
+    // dono barrou de propósito, o outro é alguém que ele ainda nem viu. Com o
+    // mesmo rótulo nos dois, "Reativar" devolve o acesso de quem foi barrado.
+    const situacao = espera ? "esperando liberação" : pessoa.ativo ? "ativo" : "pausado";
+    const acao = espera ? "Liberar" : pessoa.ativo ? "Pausar" : "Reativar";
+
     li.innerHTML =
       `<span class="acesso__quem">` +
       `<strong>${escapar(pessoa.nome)}</strong>` +
-      `<small>${pessoa.ativo ? "ativo" : "pausado"}</small>` +
+      `<small>${situacao}</small>` +
       `</span>` +
       `<span class="acesso__acoes">` +
-      `<button class="acesso__pausar" data-pausar>${pessoa.ativo ? "Pausar" : "Reativar"}</button>` +
+      `<button class="${espera ? "acesso__liberar" : "acesso__pausar"}" data-pausar>${acao}</button>` +
       `<button class="acesso__x" data-excluir>Excluir</button>` +
       `</span>`;
 
@@ -829,10 +856,23 @@ function desenharFuncionarios() {
   }
 }
 
+/** Conta criada pela tela de vendas que o dono ainda não liberou nenhuma vez. */
+function aguardando(pessoa) {
+  return !pessoa.ativo && !pessoa.aprovado_em;
+}
+
 async function pausarFuncionario(pessoa) {
+  const espera = aguardando(pessoa);
   try {
     await api.pedir("PATCH", `/usuarios/${pessoa.id}`, { ativo: !pessoa.ativo });
-    aviso(pessoa.ativo ? "Funcionário pausado" : "Funcionário reativado", "ok");
+    aviso(
+      espera
+        ? `${pessoa.nome} já pode entrar`
+        : pessoa.ativo
+          ? "Funcionário pausado"
+          : "Funcionário reativado",
+      "ok",
+    );
     await carregarFuncionarios();
   } catch (erro) {
     aviso(

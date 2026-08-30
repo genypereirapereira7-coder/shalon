@@ -41,6 +41,7 @@ class Evento(str, enum.Enum):
     METRICAS_TICK = "metricas.tick"
     IMPRESSORA_STATUS = "impressora.status"
     USUARIO_DESATIVADO = "usuario.desativado"
+    USUARIO_PENDENTE = "usuario.pendente"
 
 
 # Quem recebe o quê. Mora aqui, junto do enum, pra que o destino seja uma
@@ -62,6 +63,10 @@ DESTINOS: dict[Evento, tuple[Papel, ...]] = {
     # (topo do arquivo) — todo FUNCIONARIO conectado recebe o aviso com o id de
     # quem foi pausado ou excluído, e cada tela decide sozinha se é ela mesma.
     Evento.USUARIO_DESATIVADO: (Papel.FUNCIONARIO,),
+    # Alguém pediu uma conta. Só o dono libera, então só o dono ouve — e ouve
+    # na hora: uma pessoa parada no balcão esperando pra começar a vender é a
+    # diferença entre um toque agora e um telefonema.
+    Evento.USUARIO_PENDENTE: (Papel.DONO,),
 }
 
 

@@ -17,7 +17,7 @@ from app.schemas.auth import (
     TokensSaida,
     UsuarioPublico,
 )
-from app.schemas.usuario import CadastroEntrada
+from app.schemas.usuario import CadastroEntrada, CadastroSaida
 from app.seguranca import (
     conferir_hash,
     criar_token_acesso,
@@ -26,6 +26,7 @@ from app.seguranca import (
     hash_refresh,
     trava_login,
 )
+from app.servicos.eventos import Evento, publicar_apos_commit
 
 cfg = get_config()
 rotas = APIRouter(prefix="/auth", tags=["auth"])
@@ -65,17 +66,38 @@ async def login(dados: LoginEntrada, request: Request, sessao: SessaoDep):
     return await _emitir_tokens(sessao, usuario, dados.dispositivo)
 
 
-@rotas.post("/cadastro", response_model=TokensSaida, status_code=status.HTTP_201_CREATED)
-async def cadastro(dados: CadastroEntrada, sessao: SessaoDep):
-    """O funcionário cria a própria conta na primeira vez que abre o app.
+@rotas.post("/cadastro", response_model=CadastroSaida, status_code=status.HTTP_201_CREATED)
+async def cadastro(dados: CadastroEntrada, request: Request, sessao: SessaoDep):
+    """O funcionário pede uma conta. Quem abre a porta é o dono.
 
     Sempre nasce FUNCIONARIO — quem vira DONO é gente que já existe no banco
     antes de o sistema subir, não alguém que digitou um PIN na tela de vendas.
     O nome não pode repetir um que já exista (dono incluso): o login busca por
     nome sem saber o papel, e dois donos com o mesmo nome tornariam o login um
     sorteio de qual conta entra.
+
+    **A conta nasce inativa, e esta rota não devolve token.** Antes ela
+    devolvia a sessão pronta: criar a conta *era* entrar. Isso funcionava
+    enquanto o sistema só existia dentro da loja, onde alcançar a tela já
+    exigia estar atrás do balcão. Num endereço público a mesma porta atende
+    qualquer um que descubra o link — e uma conta de funcionário enxerga o
+    cardápio, lança pedido e imprime comanda. O dono libera pela tela dele; até
+    lá o login recusa, porque já checa `ativo`.
+
+    Tem trava de tentativa igual à do login, pela mesma razão que ela existe
+    lá: sem isso, um laço cria mil contas em um minuto e a tela do dono vira
+    uma lista impossível de auditar — cada uma delas esperando um toque
+    distraído.
     """
     nome = dados.nome.strip()
+    chave = f"cadastro:{request.client.host if request.client else '?'}"
+
+    bloqueio = trava_login.segundos_restantes(chave)
+    if bloqueio:
+        raise HTTPException(
+            status.HTTP_429_TOO_MANY_REQUESTS,
+            f"Muitas contas criadas daqui. Tente de novo em {bloqueio}s.",
+        )
 
     existe = (
         await sessao.execute(
@@ -83,13 +105,27 @@ async def cadastro(dados: CadastroEntrada, sessao: SessaoDep):
         )
     ).scalar_one_or_none()
     if existe is not None:
+        # Conta o nome repetido como tentativa: é por aí que alguém varreria a
+        # lista de quem trabalha na loja, um nome por vez.
+        trava_login.registrar_falha(chave)
         raise HTTPException(status.HTTP_409_CONFLICT, "Esse nome já está em uso")
 
-    usuario = Usuario(nome=nome, pin_hash=gerar_hash(dados.senha), papel=Papel.FUNCIONARIO)
+    usuario = Usuario(
+        nome=nome,
+        pin_hash=gerar_hash(dados.senha),
+        papel=Papel.FUNCIONARIO,
+        ativo=False,
+        aprovado_em=None,
+    )
     sessao.add(usuario)
     await sessao.flush()
 
-    return await _emitir_tokens(sessao, usuario, dados.dispositivo)
+    trava_login.registrar_falha(chave)
+
+    await publicar_apos_commit(
+        sessao, Evento.USUARIO_PENDENTE, {"usuario_id": usuario.id, "nome": usuario.nome}
+    )
+    return CadastroSaida(nome=usuario.nome)
 
 
 @rotas.post("/renovar", response_model=TokensSaida)

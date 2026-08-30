@@ -230,18 +230,16 @@ de pedido novo cairia na réplica errada e nunca chegaria na tela. Se um dia a
 loja precisar de mais de uma, o caminho é um Redis no meio, não subir o número
 aqui.
 
-**O primeiro login.** O seed cria só o dono (`adriano`). Quem vende cria a
-própria conta pelo "Criar minha conta" na tela de vendas — nome mais um PIN de
-seis dígitos — e já entra logado, sem aprovação. O dono não libera antes; ele
-pausa ou exclui depois, pela tela dele.
+**O primeiro acesso de cada pessoa.** O seed cria só o dono (`adriano`). Quem
+vende toca em "Criar minha conta" na tela de vendas, escolhe um nome e um PIN
+de seis dígitos — e **espera**. A conta nasce inativa e não vale nada até o
+dono abrir a tela dele, aba *Funcionários*, e tocar em **Liberar**. Se ele
+estiver com a tela aberta, o pedido aparece na hora, pelo WebSocket.
 
-**Isso tem uma consequência ao publicar.** Na loja, quem alcança a tela é quem
-está atrás do balcão. Num endereço público, é qualquer um que descubra o link:
-o cadastro é aberto, então uma conta de funcionário — que enxerga o cardápio e
-lança pedido — está a um formulário de distância. Enquanto o endereço for o
-`.up.railway.app` que ninguém adivinha, o risco é pequeno; no dia em que ele
-virar um domínio divulgado, deixa de ser. O conserto natural é o dono aprovar
-antes de a conta valer, e hoje ele não existe.
+Foi assim que essa porta se fechou: antes, criar a conta *era* entrar. Dentro
+da loja isso bastava, porque alcançar a tela já exigia estar atrás do balcão.
+Num endereço público, a mesma porta atende qualquer um que descubra o link — e
+uma conta de funcionário enxerga o cardápio, lança pedido e imprime comanda.
 
 ## Publicar no Render
 
@@ -328,7 +326,13 @@ Criados pelo `python -m app.seed`:
 | Agente de impressão | `0000` | AGENTE |
 
 Funcionário não nasce pelo seed: abra `/vendas/`, toque em **Criar minha
-conta** e cadastre nome + senha de 6 números.
+conta** e cadastre nome + senha de 6 números. A conta fica **esperando
+liberação** — entre como `adriano` no `/dono/`, aba *Funcionários*, e toque em
+**Liberar**. Só depois disso ela entra.
+
+Em desenvolvimento isso são dois cliques a mais, e é de propósito: o caminho de
+um funcionário novo é o mesmo em toda parte, então o que você testa na sua
+máquina é o que a loja vai viver.
 
 O login é por **nome de usuário e senha** — não há lista de usuários pra
 escolher, e nem rota que a devolva: a tela mostra dois campos, e quem não sabe o

@@ -36,6 +36,16 @@ class Usuario(Base):
         DateTime(timezone=True), nullable=False, default=agora
     )
 
+    # Quando o dono liberou esta conta. `None` = nunca liberada, e é isso que
+    # separa duas situações que o `ativo=False` sozinho confunde: a conta que
+    # acabou de se cadastrar e espera, e a conta que o dono pausou de
+    # propósito. Sem a distinção, a tela do dono mostra "pausado" nas duas e
+    # ele acaba liberando com um toque justamente quem ele tinha barrado.
+    #
+    # Conta que nasce pelo seed já vem liberada: o dono existe antes do
+    # sistema subir, e a conta de máquina do agente não passa por tela nenhuma.
+    aprovado_em: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
     sessoes: Mapped[list["SessaoAuth"]] = relationship(back_populates="usuario")
 
     def __repr__(self) -> str:

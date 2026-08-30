@@ -634,3 +634,22 @@
 #confirmar-sim {
   background: var(--dono);
 }
+
+/* ------------------------------------------- conta esperando liberação
+   A linha de quem pediu acesso e ainda não entrou. Destacada porque é a
+   única desta lista que pede uma decisão agora — do outro lado tem alguém
+   parado no balcão. */
+.acesso--espera {
+  background: var(--amarelo-fundo);
+  border-left: 3px solid var(--amarelo);
+}
+
+.acesso__liberar {
+  background: var(--verde);
+  color: #fff;
+  border: 0;
+  border-radius: var(--raio);
+  padding: 10px 14px;
+  font-weight: 700;
+  min-height: var(--alvo);
+}

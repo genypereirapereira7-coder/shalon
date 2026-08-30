@@ -746,3 +746,28 @@
 .recentes__via:active {
   background: var(--rosa-claro);
 }
+
+/* ------------------------------------------------- conta esperando liberação
+   Ocupa o lugar do formulário de cadastro depois que a conta é criada. Verde
+   e não vermelho de propósito: deu certo, só não terminou. */
+.pendente {
+  background: var(--papel);
+  border: 1px solid var(--verde);
+  border-radius: var(--raio);
+  padding: 20px;
+  margin-top: 8px;
+  box-shadow: var(--sombra);
+}
+
+.pendente__titulo {
+  margin: 0 0 8px;
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: var(--verde);
+}
+
+.pendente__texto {
+  margin: 0 0 16px;
+  line-height: 1.5;
+  color: var(--tinta);
+}

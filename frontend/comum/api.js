@@ -90,19 +90,20 @@ export async function entrar(usuario, segredo) {
 }
 
 /**
- * Cria a conta do funcionário e já entra com ela — mesma ideia do `entrar`,
- * numa tacada só. Só nasce FUNCIONARIO; quem é dono já existe no banco antes
- * do sistema subir.
+ * Pede uma conta de funcionário. **Não entra** — quem abre a porta é o dono.
+ *
+ * Antes esta função gravava os tokens e a pessoa já saía vendendo. Isso valia
+ * enquanto o sistema só existia dentro da loja; num endereço público, criar a
+ * conta não pode ser a mesma coisa que ter permissão. O servidor devolve só o
+ * nome e o aviso de que falta liberar, e a tela manda a pessoa procurar o
+ * dono. O login continua recusando até lá.
  */
 export async function cadastrar(nome, senha) {
-  const tokens = await pedir("POST", "/auth/cadastro", {
+  return await pedir("POST", "/auth/cadastro", {
     nome,
     senha,
     dispositivo: _dispositivo(),
   }, { autenticado: false });
-
-  _gravar(tokens);
-  return sessao;
 }
 
 export async function sair() {

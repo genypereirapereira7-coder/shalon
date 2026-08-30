@@ -65,7 +65,47 @@ class Config(BaseSettings):
     # provavelmente é celular com relógio errado, não venda atrasada.
     atraso_max_horas: int = 12
 
-    cors_origens: list[str] = ["*"]
+    # Os dois PWAs e a API vivem na mesma origem, então o navegador nunca
+    # precisa de CORS pra usar o sistema. `*` estava aqui desde o começo e é
+    # inerte na prática (o navegador recusa `*` junto de credenciais), mas
+    # inerte por acidente não é o mesmo que fechado: basta alguém trocar o
+    # `allow_credentials` um dia pra virar buraco. Lista vazia = só a própria
+    # origem.
+    cors_origens: list[str] = []
+
+    # ------------------------------------------------------- cabeçalhos
+
+    # A política de conteúdo. Tudo vem da própria origem porque não há CDN,
+    # fonte externa nem script de terceiro em lugar nenhum do frontend.
+    #
+    # `frame-src 'self' intent:` é o item que não pode cair: o RawBT recebe a
+    # comanda por um iframe que navega pra `intent:…`
+    # (`frontend/vendas/rawbt.js`). Sem o `intent:` aqui, a política bloqueia
+    # o quadro, a impressão para de sair e nada no servidor acusa — o erro
+    # aparece só no console do celular do balcão.
+    #
+    # É variável de ambiente pra que uma política errada seja um valor a
+    # corrigir no painel, e não um deploy a refazer com a loja aberta.
+    # `SHALON_CSP=""` desliga.
+    csp: str = (
+        "default-src 'self'; "
+        "script-src 'self'; "
+        "style-src 'self'; "
+        "img-src 'self' data:; "
+        "font-src 'self'; "
+        "connect-src 'self' ws: wss:; "
+        "manifest-src 'self'; "
+        "worker-src 'self'; "
+        "frame-src 'self' intent:; "
+        "frame-ancestors 'none'; "
+        "base-uri 'self'; "
+        "form-action 'self'"
+    )
+
+    # HSTS: um ano, e só em produção e só sobre HTTPS. Sem `preload` e sem
+    # `includeSubDomains` de propósito — os dois são difíceis de desfazer, e
+    # o domínio aqui é o do serviço gerenciado, não um que a loja controle.
+    hsts_max_age: int = 31536000
 
     # Onde ficam os PWAs; em dev o próprio FastAPI serve os arquivos.
     dir_frontend: str = "../frontend"
