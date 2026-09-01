@@ -329,6 +329,7 @@ def _saida(pedido: Pedido, *, duplicado: bool = False, total_divergente: bool = 
                     OpcaoEscolhida(
                         opcao_id=o.opcao_id,
                         nome=o.nome_snapshot,
+                        grupo=o.grupo_snapshot,
                         preco_extra_centavos=o.preco_extra_centavos_snapshot,
                     )
                     for o in i.opcoes

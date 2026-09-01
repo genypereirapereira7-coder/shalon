@@ -36,6 +36,8 @@ class ProdutoSaida(BaseModel):
     ativo: bool
     # A tela de vendas usa isto pra decidir se pergunta o sabor do dia.
     pede_sabor: bool = False
+    # Receita da casa: com isto preenchido o balcão não pergunta nada.
+    sabor_fixo: str | None = None
     grupos: list[GrupoSaida] = []
 
     model_config = {"from_attributes": True}

@@ -80,8 +80,24 @@ export function montar(pedido, { reimpressao = false, largura = LARGURA } = {}) 
     // sem o segundo a comanda sairia sem o sabor justamente no dia em que a
     // internet caiu.
     const sabor = item.sabor ?? item.sabor_texto;
-    if (sabor) escrever(linhaSabor(sabor, largura));
-    for (const opcao of item.opcoes ?? []) escrever(linhaOpcao(opcao, largura));
+    if (sabor) {
+      escrever(tituloDeBloco("SABOR", largura));
+      escrever(linhaSabor(sabor, largura));
+    }
+
+    // Agrupado pelo nome do grupo, com um título por bloco. Antes era uma
+    // lista de nomes soltos: num item que tem sabor e cobertura, "Chocolate"
+    // aparecia sem dizer se era a bola ou o que ia por cima — e quem monta
+    // tinha que adivinhar ou perguntar.
+    let grupoAtual = null;
+    for (const opcao of item.opcoes ?? []) {
+      const grupo = opcao.grupo ?? null;
+      if (grupo && grupo !== grupoAtual) {
+        escrever(tituloDeBloco(grupo, largura));
+      }
+      grupoAtual = grupo;
+      escrever(linhaOpcao(opcao, largura));
+    }
   }
 
   if (pedido.observacao) {
@@ -108,7 +124,18 @@ function linhaItem(item, largura) {
 }
 
 /**
- * O sabor, indentado sob o item e em maiúsculas.
+ * Título de um bloco sob o item: `SABOR`, `COBERTURA`, `ACOMPANHAMENTOS`.
+ *
+ * Existe porque a queixa que veio do balcão foi exatamente esta: no item que
+ * tem sabor *e* cobertura, os dois saíam como nomes soltos e ninguém sabia
+ * qual era qual. O título custa uma linha de papel e responde a pergunta.
+ */
+function tituloDeBloco(nome, largura) {
+  return cortar(`  ${nome.toUpperCase()}`, largura);
+}
+
+/**
+ * O sabor, indentado sob o título e em maiúsculas.
  *
  * Maiúsculas porque numa térmica de 32 colunas, com papel gasto e a cozinha
  * lendo de relance, é a linha que não pode ser confundida com um

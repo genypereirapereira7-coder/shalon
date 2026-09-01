@@ -710,3 +710,12 @@
 .linha__sabor[data-ligado="1"] {
   opacity: 1;
 }
+
+/* Sabor fixo: aparece, mas não é botão. Receita da casa não se edita aqui. */
+.linha__sabor-fixo {
+  padding: 0 8px;
+  font-size: 0.8rem;
+  color: var(--tinta-fraca);
+  white-space: nowrap;
+  align-self: center;
+}

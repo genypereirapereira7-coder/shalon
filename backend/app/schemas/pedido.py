@@ -45,6 +45,9 @@ class OpcaoEscolhida(BaseModel):
 
     opcao_id: int | None
     nome: str
+    # "Cobertura", "Acompanhamentos do açaí". É o título do bloco na comanda —
+    # sem ele, "Chocolate" pode ser a cobertura ou o sabor da bola.
+    grupo: str | None = None
     preco_extra_centavos: int
 
 

@@ -426,7 +426,13 @@ function desenharProdutos() {
 
     const quantidade = quantidadeDoProduto(produto.id);
     const escolhas = (produto.grupos ?? []).length;
-    const marca = escolhas ? "+ escolhas" : pedeSabor(produto) ? "escolher sabor" : "";
+    const marca = escolhas
+      ? "+ escolhas"
+      : pedeSabor(produto)
+        ? "escolher sabor"
+        : produto.sabor_fixo
+          ? `🍦 ${produto.sabor_fixo}`
+          : "";
     botao.innerHTML =
       `<span class="produto__nome">${escapar(produto.nome)}</span>` +
       `<span class="produto__preco">` +
@@ -538,7 +544,7 @@ function atualizarCarrinho() {
     li.className = "item";
     // O sabor numa linha própria e acima dos acompanhamentos: é o que o
     // funcionário confere em voz alta com o cliente antes de finalizar.
-    const sabor = textoDoSabor(linha.sabor);
+    const sabor = saborDaLinha(linha, produto);
 
     li.innerHTML =
       `<span class="item__nome">${escapar(produto.nome)}` +
@@ -719,7 +725,14 @@ function temSabor() {
  * funcionalidade existir.
  */
 function pedeSabor(produto) {
+  // Sabor fixo não se pergunta: é receita da casa, e a resposta nunca muda.
+  if (produto?.sabor_fixo) return false;
   return Boolean(produto?.pede_sabor) && temSabor();
+}
+
+/** O sabor desta linha do carrinho: o fixo do produto, ou o que foi escolhido. */
+function saborDaLinha(linha, produto) {
+  return produto?.sabor_fixo || textoDoSabor(linha.sabor);
 }
 
 /** O texto de uma escolha, pro carrinho e pra comanda. */
@@ -808,7 +821,7 @@ async function enviar() {
       nome: produto?.nome ?? `#${linha.produto_id}`,
       // O texto do sabor entra aqui pelo mesmo motivo que o nome do produto:
       // a comanda é impressa no celular, antes de o pedido subir.
-      sabor_texto: textoDoSabor(linha.sabor),
+      sabor_texto: saborDaLinha(linha, produto),
       opcoes_nomes: opcoesDe(linha.opcoes).map((o) => o.nome),
       preco_unit_centavos: precoUnitario(linha.produto_id, linha.opcoes),
     };
@@ -842,13 +855,18 @@ async function enviarUm(registro, { avisar = false } = {}) {
     const resposta = await api.pedir("POST", "/pedidos", {
       id_cliente: registro.id_cliente,
       criado_em_cliente: registro.criado_em_cliente,
-      itens: registro.itens.map(({ produto_id, quantidade, opcoes }) => ({
+      itens: registro.itens.map(({ produto_id, quantidade, opcoes, sabor }) => ({
         produto_id,
         quantidade,
         // Pedido antigo, enfileirado antes de o app ter acompanhamentos: sem
         // isto o `.map` mandaria `undefined` e o servidor recusaria uma venda
         // que já estava paga.
         opcoes: opcoes ?? [],
+        // Este `sabor` já esqueceu de ser copiado uma vez. Como a lista é
+        // remontada campo a campo, um campo novo que não seja acrescentado
+        // aqui é silenciosamente descartado: a venda sobe, a comanda sai, e só
+        // falta o sabor no papel. Campo novo no item entra aqui também.
+        sabor: sabor ?? null,
       })),
       observacao: registro.observacao,
       total_centavos: registro.total_centavos,

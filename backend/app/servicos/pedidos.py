@@ -18,6 +18,7 @@ from datetime import datetime
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.models.cardapio import Produto
 from app.models.fechamento import FechamentoDia
@@ -151,6 +152,14 @@ async def _montar_itens(
         sabor_do_item = sabor if produto.pede_sabor else None
         sabor_texto = sabores.texto(sabor_do_item, sabor_atual)
 
+        # Sabor fixo ganha de tudo: é receita da casa, não escolha de ninguém.
+        # O `sabor_tipo` fica nulo porque nenhum dos três (SABOR_1, SABOR_2,
+        # MISTO) descreve isto — o que a comanda precisa é o texto, e é ele que
+        # é gravado.
+        if produto.sabor_fixo:
+            sabor_do_item = None
+            sabor_texto = produto.sabor_fixo
+
         # Produto desativado depois da venda ainda entra: a venda aconteceu.
         # O que não pode é produto que nunca existiu (checado acima).
         preco = await preco_em(sessao, produto, momento)
@@ -171,6 +180,7 @@ async def _montar_itens(
                     PedidoItemOpcao(
                         opcao_id=opcao.id,
                         nome_snapshot=opcao.nome,
+                        grupo_snapshot=opcao.grupo.nome if opcao.grupo else None,
                         preco_extra_centavos_snapshot=opcao.preco_extra_centavos,
                     )
                     for opcao in escolhidas
@@ -191,7 +201,15 @@ async def _carregar_opcoes(
 
     catalogo: dict[int, Opcao] = {}
     if escolhidas:
-        consulta = select(Opcao).where(Opcao.id.in_(escolhidas))
+        # `selectinload` no grupo: a comanda imprime o nome dele como título do
+        # bloco, e sem carregar aqui o acesso a `opcao.grupo` dispararia um
+        # lazy load dentro do contexto async — que não é um item faltando na
+        # comanda, é um MissingGreenlet estourando no meio da venda.
+        consulta = (
+            select(Opcao)
+            .where(Opcao.id.in_(escolhidas))
+            .options(selectinload(Opcao.grupo))
+        )
         catalogo = {o.id: o for o in (await sessao.execute(consulta)).scalars()}
         if faltando := [oid for oid in escolhidas if oid not in catalogo]:
             raise PedidoInvalido(f"Opção inexistente: {', '.join(map(str, faltando))}")

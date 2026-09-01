@@ -218,3 +218,114 @@ async def test_trocar_o_sabor_nao_mexe_na_venda_de_antes(cliente, dados, entrar)
 
 def test_enum_tem_os_tres():
     assert {e.value for e in EscolhaSabor} == {"SABOR_1", "SABOR_2", "MISTO"}
+
+
+# --------------------------------------------------- sabor fixo (receita da casa)
+
+async def test_sabor_fixo_nao_pergunta_e_sai_na_comanda(cliente, dados, entrar, sessao):
+    """O milk-shake da casa é de chocolate: o balcão não escolhe, e o papel diz."""
+    from app.models.cardapio import Produto
+
+    milk = Produto(
+        categoria_id=dados["categoria"].id,
+        nome="Milk-shake 500ml",
+        preco_centavos=1600,
+        ordem=9,
+        sabor_fixo="Chocolate",
+    )
+    sessao.add(milk)
+    await sessao.commit()
+
+    balcao = await entrar(dados["joao"].id, "1234")
+    resposta = await _pedir(cliente, balcao, [{"produto_id": milk.id, "quantidade": 1}])
+    assert resposta.status_code == 201, resposta.text
+
+    item = resposta.json()["itens"][0]
+    assert item["sabor"] == "Chocolate"
+    # Nenhum dos três (SABOR_1/SABOR_2/MISTO) descreve uma receita fixa.
+    assert item["sabor_tipo"] is None
+
+
+async def test_sabor_fixo_ganha_do_sabor_do_dia(cliente, dados, entrar, sessao):
+    """Celular com cache velho manda MISTO num produto que virou fixo."""
+    from app.models.cardapio import Produto
+
+    dono = await entrar(dados["dono"].id, "senhaforte")
+    await cliente.put("/sabores", json={"sabor1": "Creme", "sabor2": "Flocos"}, headers=dono)
+
+    milk = Produto(
+        categoria_id=dados["categoria"].id,
+        nome="Milk-shake 300ml",
+        preco_centavos=1400,
+        ordem=8,
+        sabor_fixo="Chocolate",
+        pede_sabor=True,  # o estado inconsistente que a migration desfaz
+    )
+    sessao.add(milk)
+    await sessao.commit()
+
+    balcao = await entrar(dados["joao"].id, "1234")
+    resposta = await _pedir(
+        cliente, balcao, [{"produto_id": milk.id, "quantidade": 1, "sabor": "MISTO"}]
+    )
+    assert resposta.json()["itens"][0]["sabor"] == "Chocolate"
+
+
+async def test_produto_sem_sabor_fixo_continua_nulo(cliente, dados, entrar):
+    """A água não ganhou sabor nenhum de brinde."""
+    balcao = await entrar(dados["joao"].id, "1234")
+    resposta = await _pedir(
+        cliente, balcao, [{"produto_id": dados["acai"].id, "quantidade": 1}]
+    )
+    assert resposta.json()["itens"][0]["sabor"] is None
+
+
+# ------------------------------------------- o grupo de cada opção na comanda
+
+async def test_opcao_leva_o_nome_do_grupo(cliente, dados, opcoes, entrar):
+    """Sem o grupo, "Chocolate" na comanda pode ser a cobertura ou a bola —
+    que foi exatamente a confusão relatada pelo balcão."""
+    # Direto da fixture, sem navegar `grupo.opcoes`: essa relação é lazy no
+    # objeto da sessão de teste e o acesso dispararia IO fora do greenlet.
+    cobertura = opcoes["chocolate"]
+
+    balcao = await entrar(dados["joao"].id, "1234")
+    resposta = await _pedir(
+        cliente,
+        balcao,
+        [{"produto_id": dados["casquinha"].id, "quantidade": 1, "opcoes": [cobertura.id]}],
+    )
+    assert resposta.status_code == 201, resposta.text
+
+    escolhida = resposta.json()["itens"][0]["opcoes"][0]
+    assert escolhida["nome"] == "Chocolate"
+    assert escolhida["grupo"] == "Cobertura"
+
+
+async def test_o_papel_distingue_a_bola_da_cobertura(cliente, dados, opcoes, entrar):
+    """A queixa que veio do balcão, inteira: um item com sabor e cobertura.
+
+    Os dois podem ser "Chocolate", e antes saíam como dois nomes soltos.
+    """
+    dono = await _preparar(cliente, dados, entrar, sabor1="Morango", sabor2="Creme")
+    assert dono
+
+    balcao = await entrar(dados["joao"].id, "1234")
+    resposta = await _pedir(
+        cliente,
+        balcao,
+        [
+            {
+                "produto_id": dados["casquinha"].id,
+                "quantidade": 1,
+                "opcoes": [opcoes["chocolate"].id],
+                "sabor": "SABOR_1",
+            }
+        ],
+    )
+    assert resposta.status_code == 201, resposta.text
+
+    item = resposta.json()["itens"][0]
+    assert item["sabor"] == "Morango"
+    assert item["opcoes"][0]["nome"] == "Chocolate"
+    assert item["opcoes"][0]["grupo"] == "Cobertura"

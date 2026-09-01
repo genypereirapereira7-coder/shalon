@@ -124,6 +124,17 @@ class PedidoItemOpcao(Base):
         Integer, nullable=False, default=0
     )
 
+    # De que grupo veio esta escolha ("Cobertura", "Acompanhamentos do açaí").
+    #
+    # Sem isto a comanda imprime uma lista de nomes soltos sob o item, e quem
+    # monta não sabe se "Chocolate" é a cobertura ou o sabor da bola — que é
+    # exatamente a confusão que aparece quando o produto tem os dois. O nome do
+    # grupo é o que dá título a cada bloco do papel.
+    #
+    # Congelado como o resto: renomear o grupo amanhã não pode reescrever a
+    # comanda de ontem.
+    grupo_snapshot: Mapped[str | None] = mapped_column(String(60))
+
     item: Mapped["PedidoItem"] = relationship(back_populates="opcoes")  # noqa: F821
 
     __table_args__ = (

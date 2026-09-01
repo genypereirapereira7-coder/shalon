@@ -59,6 +59,27 @@ preço do produto já eram congelados.
 A troca chega no balcão na hora, pelo WebSocket: sem isso, o celular que já
 está com a tela aberta ofereceria o sabor de ontem até alguém recarregar.
 
+**Sabor fixo é outra coisa.** O milk-shake da casa é de chocolate: isso é
+receita, não sabor do dia. Produto com `sabor_fixo` não pergunta nada ao
+balcão, não aparece com o 🍦 clicável na tela do dono, e sai na comanda com o
+sabor da receita. Não há tela que edite — quem define é o `seed.py`, junto com
+o resto da estrutura que nenhuma tela edita. O "Milk-shake doce de café" fica
+de fora: o sabor dele é café.
+
+Na comanda, cada bloco leva o nome do grupo:
+
+```
+1x Casquinha             R$ 7,00
+  SABOR
+   * MORANGO
+  COBERTURA
+   - Chocolate
+```
+
+Os títulos existem porque sem eles um item com sabor *e* cobertura saía como
+dois nomes soltos — e os dois podem ser "Chocolate". Quem monta tinha que
+adivinhar qual era a bola.
+
 ### A comanda
 
 Quem imprime é o celular que vendeu. Assim que o servidor confirma o pedido — e
