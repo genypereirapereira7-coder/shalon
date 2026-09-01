@@ -20,7 +20,6 @@ from sqlalchemy import (
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base, agora
-from app.models.sabor import EscolhaSabor
 from app.models.usuario import Usuario
 
 
@@ -132,9 +131,11 @@ class PedidoItem(Base):
     # hoje?"), e o texto é o que a comanda imprime. O texto é congelado pela
     # mesma razão que o nome e o preço são: amanhã a máquina tem outro sabor, e
     # sem o snapshot a comanda de ontem passaria a dizer o sabor de hoje.
-    sabor_tipo: Mapped[EscolhaSabor | None] = mapped_column(
-        Enum(EscolhaSabor, name="escolha_sabor")
-    )
+    # Texto curto e não enum: a escolha virou uma lista de até dois
+    # ("SABOR_1,EXTRA"), e enum de banco guarda um valor só. Uma tabela filha
+    # pra duas linhas curtas seria um join a mais em toda leitura de comanda
+    # pra guardar o que cabe numa string.
+    sabor_tipos: Mapped[str | None] = mapped_column(String(40))
     sabor_snapshot: Mapped[str | None] = mapped_column(String(130))
 
     pedido: Mapped[Pedido] = relationship(back_populates="itens")

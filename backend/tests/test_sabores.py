@@ -89,11 +89,11 @@ async def test_sabor_vai_pro_item(cliente, dados, entrar):
     resposta = await _pedir(
         cliente,
         balcao,
-        [{"produto_id": dados["casquinha"].id, "quantidade": 1, "sabor": "SABOR_1"}],
+        [{"produto_id": dados["casquinha"].id, "quantidade": 1, "sabores": ["SABOR_1"]}],
     )
     assert resposta.status_code == 201, resposta.text
     item = resposta.json()["itens"][0]
-    assert item["sabor_tipo"] == "SABOR_1"
+    assert item["sabor_tipos"] == "SABOR_1"
     assert item["sabor"] == "Chocolate"
 
 
@@ -104,7 +104,7 @@ async def test_misto_junta_os_dois(cliente, dados, entrar):
     resposta = await _pedir(
         cliente,
         balcao,
-        [{"produto_id": dados["casquinha"].id, "quantidade": 1, "sabor": "MISTO"}],
+        [{"produto_id": dados["casquinha"].id, "quantidade": 1, "sabores": ["SABOR_1", "SABOR_2"]}],
     )
     assert resposta.json()["itens"][0]["sabor"] == "Chocolate + Morango"
 
@@ -119,8 +119,8 @@ async def test_sabores_diferentes_nao_viram_uma_linha_so(cliente, dados, entrar)
         cliente,
         balcao,
         [
-            {"produto_id": dados["casquinha"].id, "quantidade": 1, "sabor": "SABOR_1"},
-            {"produto_id": dados["casquinha"].id, "quantidade": 1, "sabor": "SABOR_2"},
+            {"produto_id": dados["casquinha"].id, "quantidade": 1, "sabores": ["SABOR_1"]},
+            {"produto_id": dados["casquinha"].id, "quantidade": 1, "sabores": ["SABOR_2"]},
         ],
     )
     itens = resposta.json()["itens"]
@@ -136,8 +136,8 @@ async def test_mesmo_sabor_ainda_agrupa(cliente, dados, entrar):
         cliente,
         balcao,
         [
-            {"produto_id": dados["casquinha"].id, "quantidade": 1, "sabor": "SABOR_1"},
-            {"produto_id": dados["casquinha"].id, "quantidade": 2, "sabor": "SABOR_1"},
+            {"produto_id": dados["casquinha"].id, "quantidade": 1, "sabores": ["SABOR_1"]},
+            {"produto_id": dados["casquinha"].id, "quantidade": 2, "sabores": ["SABOR_1"]},
         ],
     )
     itens = resposta.json()["itens"]
@@ -154,11 +154,11 @@ async def test_produto_que_nao_pede_sabor_ignora_a_escolha(cliente, dados, entra
     resposta = await _pedir(
         cliente,
         balcao,
-        [{"produto_id": dados["acai"].id, "quantidade": 1, "sabor": "MISTO"}],
+        [{"produto_id": dados["acai"].id, "quantidade": 1, "sabores": ["SABOR_1", "SABOR_2"]}],
     )
     assert resposta.status_code == 201
     assert resposta.json()["itens"][0]["sabor"] is None
-    assert resposta.json()["itens"][0]["sabor_tipo"] is None
+    assert resposta.json()["itens"][0]["sabor_tipos"] is None
 
 
 async def test_vende_mesmo_sem_sabor_definido(cliente, dados, entrar):
@@ -174,7 +174,7 @@ async def test_vende_mesmo_sem_sabor_definido(cliente, dados, entrar):
     resposta = await _pedir(
         cliente,
         balcao,
-        [{"produto_id": dados["casquinha"].id, "quantidade": 1, "sabor": "SABOR_1"}],
+        [{"produto_id": dados["casquinha"].id, "quantidade": 1, "sabores": ["SABOR_1"]}],
     )
     assert resposta.status_code == 201
     assert resposta.json()["itens"][0]["sabor"] is None
@@ -189,7 +189,7 @@ async def test_misto_com_um_sabor_so_nao_imprime_lixo(cliente, dados, entrar):
     resposta = await _pedir(
         cliente,
         balcao,
-        [{"produto_id": dados["casquinha"].id, "quantidade": 1, "sabor": "MISTO"}],
+        [{"produto_id": dados["casquinha"].id, "quantidade": 1, "sabores": ["SABOR_1", "SABOR_2"]}],
     )
     assert resposta.json()["itens"][0]["sabor"] == "Chocolate"
 
@@ -204,7 +204,7 @@ async def test_trocar_o_sabor_nao_mexe_na_venda_de_antes(cliente, dados, entrar)
     venda = await _pedir(
         cliente,
         balcao,
-        [{"produto_id": dados["casquinha"].id, "quantidade": 1, "sabor": "SABOR_1"}],
+        [{"produto_id": dados["casquinha"].id, "quantidade": 1, "sabores": ["SABOR_1"]}],
     )
     pedido_id = venda.json()["id"]
 
@@ -217,66 +217,169 @@ async def test_trocar_o_sabor_nao_mexe_na_venda_de_antes(cliente, dados, entrar)
 
 
 def test_enum_tem_os_tres():
-    assert {e.value for e in EscolhaSabor} == {"SABOR_1", "SABOR_2", "MISTO"}
+    assert {e.value for e in EscolhaSabor} == {"SABOR_1", "SABOR_2", "EXTRA"}
 
 
-# --------------------------------------------------- sabor fixo (receita da casa)
+# ------------------------------------------------- sabor extra do produto
 
-async def test_sabor_fixo_nao_pergunta_e_sai_na_comanda(cliente, dados, entrar, sessao):
-    """O milk-shake da casa é de chocolate: o balcão não escolhe, e o papel diz."""
+async def _milkshake(sessao, dados, nome="Milk-shake 500ml"):
     from app.models.cardapio import Produto
 
     milk = Produto(
         categoria_id=dados["categoria"].id,
-        nome="Milk-shake 500ml",
+        nome=nome,
         preco_centavos=1600,
         ordem=9,
-        sabor_fixo="Chocolate",
+        pede_sabor=True,
+        sabor_extra="Chocolate",
     )
     sessao.add(milk)
     await sessao.commit()
-
-    balcao = await entrar(dados["joao"].id, "1234")
-    resposta = await _pedir(cliente, balcao, [{"produto_id": milk.id, "quantidade": 1}])
-    assert resposta.status_code == 201, resposta.text
-
-    item = resposta.json()["itens"][0]
-    assert item["sabor"] == "Chocolate"
-    # Nenhum dos três (SABOR_1/SABOR_2/MISTO) descreve uma receita fixa.
-    assert item["sabor_tipo"] is None
+    return milk
 
 
-async def test_sabor_fixo_ganha_do_sabor_do_dia(cliente, dados, entrar, sessao):
-    """Celular com cache velho manda MISTO num produto que virou fixo."""
-    from app.models.cardapio import Produto
-
+async def test_o_extra_e_uma_opcao_a_mais(cliente, dados, entrar, sessao):
+    """O chocolate do milk-shake é escolha, não receita: entra na lista ao lado
+    dos dois do dia."""
     dono = await entrar(dados["dono"].id, "senhaforte")
-    await cliente.put("/sabores", json={"sabor1": "Creme", "sabor2": "Flocos"}, headers=dono)
-
-    milk = Produto(
-        categoria_id=dados["categoria"].id,
-        nome="Milk-shake 300ml",
-        preco_centavos=1400,
-        ordem=8,
-        sabor_fixo="Chocolate",
-        pede_sabor=True,  # o estado inconsistente que a migration desfaz
-    )
-    sessao.add(milk)
-    await sessao.commit()
+    await cliente.put("/sabores", json={"sabor1": "Morango", "sabor2": "Creme"}, headers=dono)
+    milk = await _milkshake(sessao, dados)
 
     balcao = await entrar(dados["joao"].id, "1234")
     resposta = await _pedir(
-        cliente, balcao, [{"produto_id": milk.id, "quantidade": 1, "sabor": "MISTO"}]
+        cliente, balcao, [{"produto_id": milk.id, "quantidade": 1, "sabores": ["EXTRA"]}]
+    )
+    assert resposta.status_code == 201, resposta.text
+    item = resposta.json()["itens"][0]
+    assert item["sabor"] == "Chocolate"
+    assert item["sabor_tipos"] == "EXTRA"
+
+
+async def test_pode_misturar_o_do_dia_com_o_extra(cliente, dados, entrar, sessao):
+    dono = await entrar(dados["dono"].id, "senhaforte")
+    await cliente.put("/sabores", json={"sabor1": "Morango", "sabor2": "Creme"}, headers=dono)
+    milk = await _milkshake(sessao, dados)
+
+    balcao = await entrar(dados["joao"].id, "1234")
+    resposta = await _pedir(
+        cliente,
+        balcao,
+        [{"produto_id": milk.id, "quantidade": 1, "sabores": ["SABOR_1", "EXTRA"]}],
+    )
+    item = resposta.json()["itens"][0]
+    assert item["sabor"] == "Morango + Chocolate"
+    assert item["sabor_tipos"] == "SABOR_1,EXTRA"
+
+
+async def test_a_ordem_escolhida_e_a_ordem_do_papel(cliente, dados, entrar, sessao):
+    """Mesma casquinha, papel diferente — e o papel é conferido em voz alta."""
+    dono = await entrar(dados["dono"].id, "senhaforte")
+    await cliente.put("/sabores", json={"sabor1": "Morango", "sabor2": "Creme"}, headers=dono)
+    milk = await _milkshake(sessao, dados)
+
+    balcao = await entrar(dados["joao"].id, "1234")
+    resposta = await _pedir(
+        cliente,
+        balcao,
+        [
+            {"produto_id": milk.id, "quantidade": 1, "sabores": ["EXTRA", "SABOR_1"]},
+            {"produto_id": milk.id, "quantidade": 1, "sabores": ["SABOR_1", "EXTRA"]},
+        ],
+    )
+    itens = resposta.json()["itens"]
+    assert len(itens) == 2
+    assert [i["sabor"] for i in itens] == ["Chocolate + Morango", "Morango + Chocolate"]
+
+
+async def test_mais_de_dois_e_cortado(cliente, dados, entrar, sessao):
+    """O cliente leva uma casquinha, não uma de quatro sabores."""
+    dono = await entrar(dados["dono"].id, "senhaforte")
+    await cliente.put("/sabores", json={"sabor1": "Morango", "sabor2": "Creme"}, headers=dono)
+    milk = await _milkshake(sessao, dados)
+
+    balcao = await entrar(dados["joao"].id, "1234")
+    resposta = await _pedir(
+        cliente,
+        balcao,
+        [
+            {
+                "produto_id": milk.id,
+                "quantidade": 1,
+                "sabores": ["SABOR_1", "SABOR_2", "EXTRA"],
+            }
+        ],
+    )
+    assert resposta.status_code == 422
+
+
+async def test_extra_repetido_nao_duplica(cliente, dados, entrar, sessao):
+    dono = await entrar(dados["dono"].id, "senhaforte")
+    await cliente.put("/sabores", json={"sabor1": "Morango", "sabor2": None}, headers=dono)
+    milk = await _milkshake(sessao, dados)
+
+    balcao = await entrar(dados["joao"].id, "1234")
+    resposta = await _pedir(
+        cliente,
+        balcao,
+        [{"produto_id": milk.id, "quantidade": 1, "sabores": ["EXTRA", "EXTRA"]}],
     )
     assert resposta.json()["itens"][0]["sabor"] == "Chocolate"
 
 
-async def test_produto_sem_sabor_fixo_continua_nulo(cliente, dados, entrar):
-    """A água não ganhou sabor nenhum de brinde."""
+async def test_produto_sem_extra_so_oferece_os_do_dia(cliente, dados, entrar):
+    """Pedir EXTRA num produto que não tem: sai sem sabor, não com erro."""
+    await _preparar(cliente, dados, entrar)
     balcao = await entrar(dados["joao"].id, "1234")
+
     resposta = await _pedir(
-        cliente, balcao, [{"produto_id": dados["acai"].id, "quantidade": 1}]
+        cliente,
+        balcao,
+        [{"produto_id": dados["casquinha"].id, "quantidade": 1, "sabores": ["EXTRA"]}],
     )
+    assert resposta.status_code == 201
+    assert resposta.json()["itens"][0]["sabor"] is None
+
+
+# ------------------------------------- o formato antigo, de celular com cache
+
+async def test_misto_antigo_continua_aceito(cliente, dados, entrar):
+    """Durante um deploy há celular no balcão rodando o app.js anterior, e
+    pedido na fila offline montado com ele. Recusar não seria uma tela velha —
+    seria uma venda já paga voltando com erro."""
+    await _preparar(cliente, dados, entrar)
+    balcao = await entrar(dados["joao"].id, "1234")
+
+    resposta = await _pedir(
+        cliente,
+        balcao,
+        [{"produto_id": dados["casquinha"].id, "quantidade": 1, "sabor": "MISTO"}],
+    )
+    assert resposta.status_code == 201, resposta.text
+    assert resposta.json()["itens"][0]["sabor"] == "Chocolate + Morango"
+
+
+async def test_escolha_unica_antiga_continua_aceita(cliente, dados, entrar):
+    await _preparar(cliente, dados, entrar)
+    balcao = await entrar(dados["joao"].id, "1234")
+
+    resposta = await _pedir(
+        cliente,
+        balcao,
+        [{"produto_id": dados["casquinha"].id, "quantidade": 1, "sabor": "SABOR_2"}],
+    )
+    assert resposta.json()["itens"][0]["sabor"] == "Morango"
+
+
+async def test_sabor_antigo_desconhecido_nao_derruba_a_venda(cliente, dados, entrar):
+    await _preparar(cliente, dados, entrar)
+    balcao = await entrar(dados["joao"].id, "1234")
+
+    resposta = await _pedir(
+        cliente,
+        balcao,
+        [{"produto_id": dados["casquinha"].id, "quantidade": 1, "sabor": "SEI_LA"}],
+    )
+    assert resposta.status_code == 201
     assert resposta.json()["itens"][0]["sabor"] is None
 
 
@@ -319,7 +422,7 @@ async def test_o_papel_distingue_a_bola_da_cobertura(cliente, dados, opcoes, ent
                 "produto_id": dados["casquinha"].id,
                 "quantidade": 1,
                 "opcoes": [opcoes["chocolate"].id],
-                "sabor": "SABOR_1",
+                "sabores": ["SABOR_1"],
             }
         ],
     )

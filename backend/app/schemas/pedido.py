@@ -8,10 +8,10 @@ só pra conferência: quem manda no valor é o servidor (ver `servicos/pedidos`)
 import uuid
 from datetime import date, datetime
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from app.models.pedido import StatusPedido
-from app.models.sabor import EscolhaSabor
+from app.models.sabor import MAX_SABORES, EscolhaSabor
 from app.schemas.tipos import Utc
 
 
@@ -22,11 +22,36 @@ class ItemEntrada(BaseModel):
     # confere se cabem na cota do produto e recalcula o preço extra.
     opcoes: list[int] = Field(default_factory=list, max_length=30)
 
-    # Qual sabor do dia, nos produtos que pedem. Só o tipo vem do celular; o
-    # texto é resolvido no servidor, pelo sabor que valia no instante da venda.
+    # Quais sabores, nos produtos que pedem. Só os códigos vêm do celular; os
+    # nomes são resolvidos no servidor, pelo que valia no instante da venda.
     # Mandar o nome daqui deixaria o aparelho com cache velho gravar
     # "Chocolate" num dia em que a máquina já está com creme.
-    sabor: EscolhaSabor | None = None
+    sabores: list[EscolhaSabor] = Field(default_factory=list, max_length=MAX_SABORES)
+
+    # O formato antigo, de escolha única, com o `MISTO` que já não existe.
+    #
+    # Continua aceito porque o app é um PWA: durante um deploy há celulares no
+    # balcão rodando a versão anterior do `app.js`, e alguns têm pedido na fila
+    # offline montado com ela. Recusar esse formato não seria uma tela
+    # desatualizada — seria uma venda já paga voltando com erro.
+    # Sem `deprecated=True`: a marca do Pydantic dispara um aviso a cada
+    # leitura do campo, e quem lê é o validador abaixo — o log de produção
+    # ganharia uma linha de DeprecationWarning por pedido antigo que subir.
+    # O aviso é pra quem escreve cliente novo, e está neste comentário.
+    sabor: str | None = Field(default=None, max_length=20)
+
+    @model_validator(mode="after")
+    def _aceitar_formato_antigo(self):
+        if self.sabores or not self.sabor:
+            return self
+        antigo = self.sabor.upper()
+        if antigo == "MISTO":
+            self.sabores = [EscolhaSabor.SABOR_1, EscolhaSabor.SABOR_2]
+        elif antigo in {e.value for e in EscolhaSabor}:
+            self.sabores = [EscolhaSabor(antigo)]
+        # Valor que não é nenhum dos conhecidos vira nenhum sabor, e não um
+        # 422: a venda vale mais que a linha do sabor no papel.
+        return self
 
 
 class PedidoEntrada(BaseModel):
@@ -60,8 +85,9 @@ class ItemSaida(BaseModel):
     subtotal_centavos: int
     opcoes: list[OpcaoEscolhida] = []
 
-    # Como estava na hora da venda. `sabor` é o texto que a comanda imprime.
-    sabor_tipo: EscolhaSabor | None = None
+    # Como estava na hora da venda. `sabor` é o texto que a comanda imprime
+    # ("Morango + Chocolate"); `sabor_tipos` são os códigos que o produziram.
+    sabor_tipos: str | None = None
     sabor: str | None = None
 
 

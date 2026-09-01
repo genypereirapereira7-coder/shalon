@@ -179,10 +179,11 @@ CESTINHA_ACOMP = ("Acompanhamentos da cestinha", 0, 3)
 
 # ---------------------------------------------------------------- cardápio
 #
-# (categoria, ordem, [(produto, preço, cor, [grupos], sabor_fixo opcional)])
+# (categoria, ordem, [(produto, preço, cor, [grupos], sabor_extra opcional)])
 #
-# O `sabor_fixo` é a receita da casa e não tem tela de edição — por isso mora
-# aqui, e por isso o seed o sincroniza como sincroniza as cotas dos grupos.
+# O `sabor_extra` é um sabor a mais que o produto sempre oferece, além dos dois
+# do dia. Não tem tela de edição — por isso mora aqui, e por isso o seed o
+# sincroniza como sincroniza as cotas dos grupos.
 
 CARDAPIO = [
     (
@@ -240,13 +241,13 @@ CARDAPIO = [
         "Milk-shake",
         6,
         [
-            # O milk-shake da casa é de chocolate. É receita, não sabor do
-            # dia: o balcão não pergunta, e não há tela que edite isso.
+            # O milk-shake tem chocolate sempre disponível, além dos dois
+            # sabores do dia. O balcão escolhe um ou mistura dois.
             ("Milk-shake 300ml", 1400, "#e0a96d", [], "Chocolate"),
             ("Milk-shake 500ml", 1600, "#e0a96d", [], "Chocolate"),
             ("Milk-shake 700ml", 1800, "#cf9450", [], "Chocolate"),
             # Sabor fechado, tamanho único — por isso não entra na escada de
-            # 300/500/700 dos outros. E o sabor dele é café, não chocolate.
+            # 300/500/700 dos outros, e não oferece escolha nenhuma.
             ("Milk-shake doce de café", 1800, "#cf9450", []),
         ],
     ),
@@ -415,7 +416,7 @@ async def _semear_produtos(
         for i, linha in enumerate(produtos):
             # Tupla de 4 ou de 5: só quem tem sabor fixo carrega o quinto item.
             nome_prod, preco, cor, vinculos = linha[:4]
-            sabor_fixo = linha[4] if len(linha) > 4 else None
+            sabor_extra = linha[4] if len(linha) > 4 else None
 
             produto = (
                 await sessao.execute(select(Produto).where(Produto.nome == nome_prod))
@@ -427,25 +428,28 @@ async def _semear_produtos(
                     preco_centavos=preco,
                     cor_botao=cor,
                     ordem=i,
-                    sabor_fixo=sabor_fixo,
+                    sabor_extra=sabor_extra,
+                    # Sabor extra só serve pra quem pergunta o sabor: ele é uma
+                    # terceira opção na lista, não uma receita fechada.
+                    pede_sabor=bool(sabor_extra),
                 )
                 sessao.add(produto)
                 await sessao.flush()
                 criados.append(f"produto {nome_prod}")
-            elif produto.sabor_fixo != sabor_fixo:
+            elif produto.sabor_extra != sabor_extra:
                 # Estrutura, e portanto sincronizada: nenhuma tela edita isto,
                 # então este arquivo é a única fonte. Sem o ajuste, mudar a
-                # receita aqui não teria efeito em banco nenhum que já existe.
-                produto.sabor_fixo = sabor_fixo
+                # lista aqui não teria efeito em banco nenhum que já existe.
+                produto.sabor_extra = sabor_extra
                 ajustados.append(
-                    f"{nome_prod}: sabor fixo {sabor_fixo or 'removido'}"
+                    f"{nome_prod}: sabor extra {sabor_extra or 'removido'}"
                 )
 
-            # Os dois juntos fariam o balcão perguntar algo que o servidor
-            # ignora — o sabor fixo ganha sempre.
-            if sabor_fixo and produto.pede_sabor:
-                produto.pede_sabor = False
-                ajustados.append(f"{nome_prod}: não pergunta mais o sabor (é fixo)")
+            # Produto com sabor extra e sem `pede_sabor` esconderia a própria
+            # opção que acabou de ganhar: a lista existiria e ninguém a veria.
+            if sabor_extra and not produto.pede_sabor:
+                produto.pede_sabor = True
+                ajustados.append(f"{nome_prod}: passa a perguntar o sabor")
 
             for ordem_v, (nome_grupo, minimo, maximo) in enumerate(vinculos):
                 grupo = grupos[nome_grupo]

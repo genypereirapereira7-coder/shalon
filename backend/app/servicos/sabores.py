@@ -9,7 +9,7 @@ dizendo "Misto: Chocolate + " — e a cozinha teria que adivinhar.
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.sabor import EscolhaSabor, SaborDoDia
+from app.models.sabor import MAX_SABORES, EscolhaSabor, SaborDoDia
 
 # `id` fixo: é uma linha só, e procurar "a mais recente" abriria a porta pra
 # duas linhas coexistirem e a loja servir sabores diferentes em dois celulares.
@@ -45,25 +45,44 @@ async def gravar(
     return atual
 
 
-def texto(escolha: EscolhaSabor | None, sabores: SaborDoDia) -> str | None:
-    """O que sai impresso na comanda pra esta escolha.
+def resolver(
+    escolhas: list[EscolhaSabor], sabores: SaborDoDia, extra: str | None
+) -> tuple[str | None, str | None]:
+    """Traduz as escolhas em `(codigos, texto)` pra gravar no item.
 
-    Devolve `None` quando não há o que dizer — e é isso que faz a loja
-    continuar vendendo num dia em que ninguém preencheu os sabores: o item sai
-    sem a linha do sabor, exatamente como saía antes desta funcionalidade
-    existir. Barrar a venda seria transformar um esquecimento de dois campos
-    numa fila parada.
+    `codigos` é o que foi escolhido ("SABOR_1,EXTRA"); `texto` é o que sai no
+    papel ("Morango + Chocolate"). Os dois são congelados no item porque amanhã
+    a máquina tem outro sabor e a comanda de ontem não pode mudar junto.
+
+    Escolha sem nome por trás é descartada em silêncio: o dono pode não ter
+    preenchido o sabor 2 hoje, e o celular pode estar com a lista de ontem em
+    cache. Recusar a venda por isso pararia a fila por uma divergência que não
+    muda preço nem o que o cliente leva — sai o que dá pra nomear, e o que
+    sobra é uma linha a menos no papel, não uma venda perdida.
     """
-    if escolha is None:
-        return None
+    nomes: list[str] = []
+    codigos: list[str] = []
 
+    # `dict.fromkeys` e não `set`: a ordem importa. "Morango + Chocolate" e
+    # "Chocolate + Morango" são a mesma casquinha, mas duas comandas
+    # diferentes aos olhos de quem confere o papel com o balcão.
+    for escolha in dict.fromkeys(escolhas):
+        nome = _nome(escolha, sabores, extra)
+        if not nome:
+            continue
+        nomes.append(nome)
+        codigos.append(escolha.value)
+        if len(nomes) == MAX_SABORES:
+            break
+
+    if not nomes:
+        return None, None
+    return ",".join(codigos), " + ".join(nomes)
+
+
+def _nome(escolha: EscolhaSabor, sabores: SaborDoDia, extra: str | None) -> str | None:
     if escolha is EscolhaSabor.SABOR_1:
         return sabores.sabor1
     if escolha is EscolhaSabor.SABOR_2:
         return sabores.sabor2
-
-    # MISTO: só é misto se houver os dois. Com um só preenchido, o que o
-    # cliente vai levar é aquele — e é ele que a cozinha precisa ler.
-    if sabores.sabor1 and sabores.sabor2:
-        return f"{sabores.sabor1} + {sabores.sabor2}"
-    return sabores.sabor1 or sabores.sabor2
+    return extra

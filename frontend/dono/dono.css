@@ -711,11 +711,9 @@
   opacity: 1;
 }
 
-/* Sabor fixo: aparece, mas não é botão. Receita da casa não se edita aqui. */
-.linha__sabor-fixo {
-  padding: 0 8px;
-  font-size: 0.8rem;
-  color: var(--tinta-fraca);
+/* O botão do sabor cresce quando carrega o nome do extra ("🍦+Chocolate").
+   Sem isto ele fica com a largura de um emoji e o texto vaza. */
+.linha__sabor {
+  font-size: 0.95rem;
   white-space: nowrap;
-  align-self: center;
 }

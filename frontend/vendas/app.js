@@ -27,6 +27,9 @@ const CHAVE_CARDAPIO = "shalon.cardapio";
 // o sabor troca toda manhã, e guardá-los juntos faria o balcão perder o
 // cardápio inteiro do cache toda vez que a máquina trocasse de sabor.
 const CHAVE_SABORES = "shalon.sabores";
+/** Uma casquinha ou uma misturada — não uma de quatro sabores.
+ *  O servidor aplica o mesmo teto (`app/models/sabor.py`). */
+const MAX_SABORES = 2;
 const INTERVALO_SINCRONIA_MS = 15000;
 
 const estado = {
@@ -426,13 +429,7 @@ function desenharProdutos() {
 
     const quantidade = quantidadeDoProduto(produto.id);
     const escolhas = (produto.grupos ?? []).length;
-    const marca = escolhas
-      ? "+ escolhas"
-      : pedeSabor(produto)
-        ? "escolher sabor"
-        : produto.sabor_fixo
-          ? `🍦 ${produto.sabor_fixo}`
-          : "";
+    const marca = escolhas ? "+ escolhas" : pedeSabor(produto) ? "escolher sabor" : "";
     botao.innerHTML =
       `<span class="produto__nome">${escapar(produto.nome)}</span>` +
       `<span class="produto__preco">` +
@@ -464,12 +461,15 @@ function desenharProdutos() {
  * duas linhas. Somadas em "2x Casquinha", a cozinha serviria as duas iguais e
  * o cliente levaria o sabor errado.
  */
-function chaveDe(produtoId, opcoes, sabor = null) {
-  return `${produtoId}|${[...opcoes].sort((a, b) => a - b).join(",")}|${sabor ?? ""}`;
+function chaveDe(produtoId, opcoes, sabores = []) {
+  // Os sabores entram na ordem escolhida, sem ordenar: "Morango + Chocolate" e
+  // "Chocolate + Morango" são a mesma casquinha, mas o papel sai diferente, e
+  // somar as duas numa linha só faria a comanda mentir sobre uma delas.
+  return `${produtoId}|${[...opcoes].sort((a, b) => a - b).join(",")}|${sabores.join(",")}`;
 }
 
-function adicionarLinha(produtoId, opcoes, quantidade = 1, sabor = null) {
-  const chave = chaveDe(produtoId, opcoes, sabor);
+function adicionarLinha(produtoId, opcoes, quantidade = 1, sabores = []) {
+  const chave = chaveDe(produtoId, opcoes, sabores);
   const linha = estado.carrinho.get(chave);
 
   if (linha) {
@@ -479,7 +479,7 @@ function adicionarLinha(produtoId, opcoes, quantidade = 1, sabor = null) {
       produto_id: produtoId,
       opcoes: [...opcoes].sort((a, b) => a - b),
       quantidade: Math.min(99, quantidade),
-      sabor,
+      sabores: [...sabores],
     });
   }
 
@@ -544,7 +544,7 @@ function atualizarCarrinho() {
     li.className = "item";
     // O sabor numa linha própria e acima dos acompanhamentos: é o que o
     // funcionário confere em voz alta com o cliente antes de finalizar.
-    const sabor = saborDaLinha(linha, produto);
+    const sabor = textoDosSabores(linha.sabores, produto);
 
     li.innerHTML =
       `<span class="item__nome">${escapar(produto.nome)}` +
@@ -595,7 +595,7 @@ function limparCarrinho() {
  * "quanto fica com a geléia?" e a resposta está na tela.
  */
 function abrirEscolhas(produto) {
-  estado.escolha = { produto, selecionadas: new Set(), sabor: null };
+  estado.escolha = { produto, selecionadas: new Set(), sabores: [] };
 
   $("escolhas-nome").textContent = produto.nome;
   $("escolhas-base").textContent = `R$ ${valor(produto.preco_centavos)}`;
@@ -627,7 +627,8 @@ function desenharEscolhas() {
    * apagado" sozinho manda o funcionário procurar o que está errado com o
    * cliente esperando.
    */
-  let pendente = pedeSabor(produto) && estado.escolha.sabor === null ? "SABOR" : null;
+  let pendente =
+    pedeSabor(produto) && estado.escolha.sabores.length === 0 ? "SABOR" : null;
 
   for (const grupo of produto.grupos) {
     const marcadas = grupo.opcoes.filter((o) => selecionadas.has(o.id)).length;
@@ -704,17 +705,12 @@ function alternarOpcao(grupo, opcao) {
 }
 
 function confirmarEscolhas() {
-  const { produto, selecionadas, sabor } = estado.escolha;
-  adicionarLinha(produto.id, [...selecionadas], 1, sabor);
+  const { produto, selecionadas, sabores: escolhidos } = estado.escolha;
+  adicionarLinha(produto.id, [...selecionadas], 1, escolhidos);
   fecharEscolhas();
 }
 
 // ================================================================ sabor do dia
-
-/** Há sabor definido pela loja hoje? Sem isso, ninguém pergunta nada. */
-function temSabor() {
-  return Boolean(estado.sabores.sabor1 || estado.sabores.sabor2);
-}
 
 /**
  * Este produto pergunta o sabor agora?
@@ -724,64 +720,95 @@ function temSabor() {
  * botões sem nome. A venda simplesmente segue como seguia antes desta
  * funcionalidade existir.
  */
+/**
+ * Este produto pergunta o sabor agora?
+ *
+ * Precisa ter algo pra oferecer: os dois do dia, ou o extra do próprio produto
+ * (o chocolate do milk-shake). Numa manhã em que o dono não preencheu nada, um
+ * produto sem extra abriria uma folha com botão nenhum.
+ */
 function pedeSabor(produto) {
-  // Sabor fixo não se pergunta: é receita da casa, e a resposta nunca muda.
-  if (produto?.sabor_fixo) return false;
-  return Boolean(produto?.pede_sabor) && temSabor();
+  return Boolean(produto?.pede_sabor) && listaDeSabores(produto).length > 0;
 }
 
-/** O sabor desta linha do carrinho: o fixo do produto, ou o que foi escolhido. */
-function saborDaLinha(linha, produto) {
-  return produto?.sabor_fixo || textoDoSabor(linha.sabor);
-}
-
-/** O texto de uma escolha, pro carrinho e pra comanda. */
-function textoDoSabor(sabor) {
+/** As opções de sabor deste produto: as do dia mais a extra dele, se houver. */
+function listaDeSabores(produto) {
   const { sabor1, sabor2 } = estado.sabores;
-  if (sabor === "SABOR_1") return sabor1;
-  if (sabor === "SABOR_2") return sabor2;
-  if (sabor === "MISTO") {
-    return sabor1 && sabor2 ? `${sabor1} + ${sabor2}` : sabor1 || sabor2;
-  }
-  return null;
+  const lista = [];
+  if (sabor1) lista.push(["SABOR_1", sabor1]);
+  if (sabor2) lista.push(["SABOR_2", sabor2]);
+  if (produto?.sabor_extra) lista.push(["EXTRA", produto.sabor_extra]);
+  return lista;
+}
+
+/** O texto da escolha, pro carrinho e pra comanda. */
+function textoDosSabores(escolhas, produto) {
+  const nomes = new Map(listaDeSabores(produto));
+  const texto = (escolhas ?? []).map((e) => nomes.get(e)).filter(Boolean);
+  return texto.length ? texto.join(" + ") : null;
 }
 
 function blocoDeSabor() {
-  const { sabor1, sabor2 } = estado.sabores;
-  const escolhido = estado.escolha.sabor;
-
-  // Só entram os que existem: com um sabor só na máquina, "Misto" não é
-  // opção — e um botão que não faz o que promete é pior que botão nenhum.
-  const opcoes = [];
-  if (sabor1) opcoes.push(["SABOR_1", sabor1]);
-  if (sabor2) opcoes.push(["SABOR_2", sabor2]);
-  if (sabor1 && sabor2) opcoes.push(["MISTO", "Misto (os dois)"]);
+  const { produto, sabores: escolhidos } = estado.escolha;
+  const opcoes = listaDeSabores(produto);
+  const cheio = escolhidos.length >= MAX_SABORES;
 
   const bloco = document.createElement("section");
   bloco.className = "grupo";
   bloco.innerHTML =
     `<p class="grupo__titulo">Sabor` +
-    `<span class="grupo__cota" data-obrigatorio="${escolhido === null ? 1 : 0}">` +
-    `${escolhido === null ? "escolha 1" : "1/1"}</span></p>` +
+    `<span class="grupo__cota" data-obrigatorio="${escolhidos.length ? 0 : 1}">` +
+    `${escapar(cotaDeSabor(escolhidos.length))}</span></p>` +
     `<div class="grupo__opcoes"></div>`;
 
   const area = bloco.querySelector(".grupo__opcoes");
-  for (const [valorSabor, rotulo] of opcoes) {
+  for (const [chave, rotulo] of opcoes) {
+    const posicao = escolhidos.indexOf(chave);
+    const marcada = posicao >= 0;
+
     const botao = document.createElement("button");
     botao.className = "opcao";
-    botao.dataset.marcada = escolhido === valorSabor ? "1" : "0";
-    botao.dataset.bloqueada = "0";
-    botao.innerHTML = `<span>${escapar(rotulo)}</span>`;
-    botao.onclick = () => {
-      // Tocar de novo no que já está marcado desmarca. Sem isso, quem erra o
-      // sabor tem que fechar a folha e recomeçar com o cliente esperando.
-      estado.escolha.sabor = escolhido === valorSabor ? null : valorSabor;
-      vibrar(10);
-      desenharEscolhas();
-    };
+    botao.dataset.marcada = marcada ? "1" : "0";
+    // Cheio: as não marcadas apagam mas continuam clicáveis, pra explicar o
+    // porquê em vez de simplesmente não responder ao toque — a mesma regra que
+    // os acompanhamentos já seguem.
+    botao.dataset.bloqueada = !marcada && cheio ? "1" : "0";
+    botao.innerHTML =
+      `<span>${escapar(rotulo)}</span>` +
+      // A ordem numerada só aparece quando há dois: com um sabor só, um "1"
+      // pendurado no botão é ruído. Com dois, é o que diz qual sai primeiro no
+      // papel — e o papel é conferido em voz alta com o cliente.
+      (marcada && escolhidos.length > 1
+        ? `<span class="opcao__extra">${posicao + 1}º</span>`
+        : "");
+
+    botao.onclick = () => alternarSabor(chave);
     area.append(botao);
   }
   return bloco;
+}
+
+function cotaDeSabor(quantos) {
+  if (!quantos) return `escolha 1 ou ${MAX_SABORES}`;
+  return `${quantos}/${MAX_SABORES}`;
+}
+
+function alternarSabor(chave) {
+  const escolhidos = estado.escolha.sabores;
+  const posicao = escolhidos.indexOf(chave);
+
+  if (posicao >= 0) {
+    escolhidos.splice(posicao, 1);
+  } else if (escolhidos.length >= MAX_SABORES) {
+    aviso(`No máximo ${MAX_SABORES} sabores — tire um pra trocar`, "erro");
+    vibrar([30, 40, 30]);
+    return;
+  } else {
+    escolhidos.push(chave);
+  }
+
+  vibrar(10);
+  desenharEscolhas();
 }
 
 async function carregarSabores() {
@@ -815,13 +842,13 @@ async function enviar() {
       // Só o tipo vai pro servidor. O nome do sabor é resolvido lá, pelo que
       // valia no instante da venda — mandar o texto daqui deixaria um aparelho
       // com cache velho gravar "Chocolate" num dia de creme.
-      sabor: linha.sabor,
+      sabores: linha.sabores ?? [],
       // Guardados só pra mostrar na lista de recentes quando o pedido ainda
       // não subiu. Quem manda no preço é sempre o servidor.
       nome: produto?.nome ?? `#${linha.produto_id}`,
       // O texto do sabor entra aqui pelo mesmo motivo que o nome do produto:
       // a comanda é impressa no celular, antes de o pedido subir.
-      sabor_texto: saborDaLinha(linha, produto),
+      sabor_texto: textoDosSabores(linha.sabores, produto),
       opcoes_nomes: opcoesDe(linha.opcoes).map((o) => o.nome),
       preco_unit_centavos: precoUnitario(linha.produto_id, linha.opcoes),
     };
@@ -855,18 +882,22 @@ async function enviarUm(registro, { avisar = false } = {}) {
     const resposta = await api.pedir("POST", "/pedidos", {
       id_cliente: registro.id_cliente,
       criado_em_cliente: registro.criado_em_cliente,
-      itens: registro.itens.map(({ produto_id, quantidade, opcoes, sabor }) => ({
+      itens: registro.itens.map(({ produto_id, quantidade, opcoes, sabores, sabor }) => ({
         produto_id,
         quantidade,
         // Pedido antigo, enfileirado antes de o app ter acompanhamentos: sem
         // isto o `.map` mandaria `undefined` e o servidor recusaria uma venda
         // que já estava paga.
         opcoes: opcoes ?? [],
-        // Este `sabor` já esqueceu de ser copiado uma vez. Como a lista é
-        // remontada campo a campo, um campo novo que não seja acrescentado
-        // aqui é silenciosamente descartado: a venda sobe, a comanda sai, e só
-        // falta o sabor no papel. Campo novo no item entra aqui também.
-        sabor: sabor ?? null,
+        // O sabor já esqueceu de ser copiado uma vez. Como a lista é remontada
+        // campo a campo, um campo novo que não seja acrescentado aqui é
+        // silenciosamente descartado: a venda sobe, a comanda sai, e só falta
+        // o sabor no papel. Campo novo no item entra aqui também.
+        sabores: sabores ?? [],
+        // Pedido que ficou na fila offline desde antes de o sabor virar lista.
+        // O servidor entende os dois formatos; descartar aqui seria perder o
+        // sabor de uma venda que já foi paga.
+        sabor: sabores ? null : (sabor ?? null),
       })),
       observacao: registro.observacao,
       total_centavos: registro.total_centavos,

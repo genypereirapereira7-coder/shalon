@@ -25,11 +25,24 @@ from app.models.base import Base, agora
 
 
 class EscolhaSabor(str, enum.Enum):
-    """O que o cliente pediu. `MISTO` é os dois na mesma casquinha."""
+    """De onde vem cada bola escolhida.
+
+    `MISTO` não existe mais: misto é escolher dois. Ele era um terceiro valor
+    que significava "os dois anteriores" — e no dia em que um produto passou a
+    oferecer um sabor além dos dois do dia (o chocolate do milk-shake), esse
+    valor não sabia mais dizer *quais* dois.
+
+    `EXTRA` é o sabor que o próprio produto sempre oferece, além dos do dia.
+    """
 
     SABOR_1 = "SABOR_1"
     SABOR_2 = "SABOR_2"
-    MISTO = "MISTO"
+    EXTRA = "EXTRA"
+
+
+# O cliente leva uma casquinha ou uma casquinha misturada — não uma de quatro
+# sabores. O teto está aqui, e não espalhado pela tela e pela rota.
+MAX_SABORES = 2
 
 
 class SaborDoDia(Base):

@@ -455,28 +455,24 @@ function linhaProduto(produto) {
   // fronteira — por isso é um toque por produto, e não uma regra por
   // categoria.
   //
-  // Produto de sabor fixo mostra o sabor em vez do botão. É receita da casa
-  // (o milk-shake é de chocolate), não sabor do dia: não se edita aqui, mas
-  // aparece — um produto que não pergunta nada e não explica por quê é o tipo
-  // de coisa que faz alguém achar que o sistema está quebrado.
-  let sabor;
-  if (produto.sabor_fixo) {
-    sabor = document.createElement("span");
-    sabor.className = "linha__sabor-fixo";
-    sabor.textContent = `🍦 ${produto.sabor_fixo}`;
-    sabor.title = `${produto.nome} é sempre de ${produto.sabor_fixo} — não se edita aqui`;
-  } else {
-    sabor = document.createElement("button");
-    sabor.className = "linha__sabor";
-    sabor.dataset.ligado = produto.pede_sabor ? "1" : "0";
-    sabor.textContent = "🍦";
-    sabor.title = produto.pede_sabor
-      ? "Pergunta o sabor do dia — toque pra parar de perguntar"
-      : "Não pergunta o sabor — toque pra passar a perguntar";
-    sabor.setAttribute("aria-label", `${produto.nome}: ${sabor.title}`);
-    sabor.setAttribute("aria-pressed", produto.pede_sabor ? "true" : "false");
-    sabor.onclick = () => alternarSabor(produto);
+  // Produto com sabor extra mostra qual é, ao lado do botão: o milk-shake
+  // oferece chocolate além dos dois do dia, e um 🍦 sozinho não conta isso.
+  // O sabor extra não se edita aqui — é estrutura, definida no `seed.py` —,
+  // mas aparece, porque um produto que oferece algo que a tela não mostra é o
+  // tipo de coisa que faz alguém achar que o sistema está errado.
+  const sabor = document.createElement("button");
+  sabor.className = "linha__sabor";
+  sabor.dataset.ligado = produto.pede_sabor ? "1" : "0";
+  sabor.textContent = produto.sabor_extra ? `🍦+${produto.sabor_extra}` : "🍦";
+  sabor.title = produto.pede_sabor
+    ? "Pergunta o sabor do dia — toque pra parar de perguntar"
+    : "Não pergunta o sabor — toque pra passar a perguntar";
+  if (produto.sabor_extra) {
+    sabor.title += `. Este oferece ${produto.sabor_extra} além dos dois do dia.`;
   }
+  sabor.setAttribute("aria-label", `${produto.nome}: ${sabor.title}`);
+  sabor.setAttribute("aria-pressed", produto.pede_sabor ? "true" : "false");
+  sabor.onclick = () => alternarSabor(produto);
 
   const ativo = document.createElement("button");
   ativo.className = "linha__ativo";

@@ -59,12 +59,17 @@ preço do produto já eram congelados.
 A troca chega no balcão na hora, pelo WebSocket: sem isso, o celular que já
 está com a tela aberta ofereceria o sabor de ontem até alguém recarregar.
 
-**Sabor fixo é outra coisa.** O milk-shake da casa é de chocolate: isso é
-receita, não sabor do dia. Produto com `sabor_fixo` não pergunta nada ao
-balcão, não aparece com o 🍦 clicável na tela do dono, e sai na comanda com o
-sabor da receita. Não há tela que edite — quem define é o `seed.py`, junto com
-o resto da estrutura que nenhuma tela edita. O "Milk-shake doce de café" fica
-de fora: o sabor dele é café.
+**Até dois por item.** Uma bola ou duas misturadas — o papel sai
+`MORANGO + CHOCOLATE`, na ordem em que foram tocados. A ordem importa porque é
+ela que o funcionário confere em voz alta com o cliente.
+
+**Sabor extra do produto.** O milk-shake oferece chocolate **além** dos dois do
+dia: o cliente pode levar só chocolate, só um do dia, ou os dois misturados.
+Isso é `produto.sabor_extra` — não há tela que edite, quem define é o
+`seed.py`, junto com o resto da estrutura que nenhuma tela edita. Na tela do
+dono ele aparece no botão (`🍦+Chocolate`), pra que ninguém precise ler o
+código pra saber que existe. O "Milk-shake doce de café" fica de fora: o sabor
+dele é café.
 
 Na comanda, cada bloco leva o nome do grupo:
 

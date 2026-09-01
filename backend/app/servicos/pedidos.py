@@ -119,11 +119,15 @@ async def _montar_itens(
     #
     # O sabor entra na chave pela mesma razão: uma casquinha de chocolate e uma
     # de creme somariam "2x Casquinha" e a cozinha serviria as duas iguais.
-    quantidades: OrderedDict[tuple[int, tuple[int, ...], EscolhaSabor | None], int] = (
-        OrderedDict()
-    )
+    quantidades: OrderedDict[
+        tuple[int, tuple[int, ...], tuple[EscolhaSabor, ...]], int
+    ] = OrderedDict()
     for item in entradas:
-        chave = (item.produto_id, tuple(sorted(item.opcoes)), item.sabor)
+        # A tupla dos sabores entra na chave **na ordem escolhida**: "Morango +
+        # Chocolate" e "Chocolate + Morango" são a mesma casquinha, mas o papel
+        # sai diferente, e somar as duas numa linha só faria a comanda mentir
+        # sobre uma delas.
+        chave = (item.produto_id, tuple(sorted(item.opcoes)), tuple(item.sabores))
         quantidades[chave] = quantidades.get(chave, 0) + item.quantidade
 
     produto_ids = {pid for pid, _, _ in quantidades}
@@ -141,7 +145,7 @@ async def _montar_itens(
 
     itens: list[PedidoItem] = []
     total = 0
-    for (produto_id, opcao_ids, sabor), quantidade in quantidades.items():
+    for (produto_id, opcao_ids, escolhas_sabor), quantidade in quantidades.items():
         produto = produtos[produto_id]
         escolhidas = _conferir_opcoes(produto, vinculos.get(produto_id, []), opcao_ids, catalogo)
 
@@ -149,16 +153,11 @@ async def _montar_itens(
         # pode estar com o cardápio velho em cache, de quando o dono ainda
         # marcava este produto. Recusar a venda por isso pararia a fila por uma
         # divergência que não muda preço nem o que o cliente leva.
-        sabor_do_item = sabor if produto.pede_sabor else None
-        sabor_texto = sabores.texto(sabor_do_item, sabor_atual)
-
-        # Sabor fixo ganha de tudo: é receita da casa, não escolha de ninguém.
-        # O `sabor_tipo` fica nulo porque nenhum dos três (SABOR_1, SABOR_2,
-        # MISTO) descreve isto — o que a comanda precisa é o texto, e é ele que
-        # é gravado.
-        if produto.sabor_fixo:
-            sabor_do_item = None
-            sabor_texto = produto.sabor_fixo
+        sabor_tipos, sabor_texto = (
+            sabores.resolver(list(escolhas_sabor), sabor_atual, produto.sabor_extra)
+            if produto.pede_sabor
+            else (None, None)
+        )
 
         # Produto desativado depois da venda ainda entra: a venda aconteceu.
         # O que não pode é produto que nunca existiu (checado acima).
@@ -174,7 +173,7 @@ async def _montar_itens(
                 preco_unit_centavos_snapshot=preco,
                 quantidade=quantidade,
                 subtotal_centavos=subtotal,
-                sabor_tipo=sabor_do_item,
+                sabor_tipos=sabor_tipos,
                 sabor_snapshot=sabor_texto,
                 opcoes=[
                     PedidoItemOpcao(
@@ -194,7 +193,7 @@ async def _montar_itens(
 async def _carregar_opcoes(
     sessao: AsyncSession,
     produto_ids: set[int],
-    quantidades: OrderedDict[tuple[int, tuple[int, ...], EscolhaSabor | None], int],
+    quantidades: OrderedDict[tuple[int, tuple[int, ...], tuple[EscolhaSabor, ...]], int],
 ) -> tuple[dict[int, Opcao], dict[int, list[ProdutoOpcaoGrupo]]]:
     """Busca as opções escolhidas e o que cada produto tem direito de oferecer."""
     escolhidas = {oid for _, ids, _ in quantidades for oid in ids}
