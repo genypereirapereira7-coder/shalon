@@ -18,6 +18,13 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base, agora
 
+# Categorias em que todo produto leva bola de sorvete: aqui o 🍦 não é um
+# interruptor por item, é uma regra da categoria inteira — desligar um por
+# engano parava a folha de escolha sem ninguém perceber até o cliente
+# reclamar no balcão. Fora daqui o interruptor continua livre, porque a
+# fronteira não é limpa (ver comentário em `Produto.pede_sabor`).
+CATEGORIAS_SABOR_OBRIGATORIO = {"Sorvetes", "Trufados", "Sundae", "Kids"}
+
 
 class Categoria(Base):
     __tablename__ = "categoria"
@@ -44,11 +51,12 @@ class Produto(Base):
     ativo: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
 
     # Este produto leva bola de sorvete, e por isso a tela de vendas pergunta
-    # qual sabor do dia vai nele. É um interruptor por produto e não uma regra
-    # por categoria porque a fronteira não é limpa: o milk-shake leva bola, a
-    # água não, e o dono é quem sabe o que a máquina dele serve. Marcar produto
-    # por produto custa um toque uma vez; adivinhar errado custa uma pergunta
-    # boba na cara do cliente em cada garrafa de água vendida.
+    # qual sabor do dia vai nele. Fora de `CATEGORIAS_SABOR_OBRIGATORIO` é um
+    # interruptor por produto e não uma regra por categoria, porque a
+    # fronteira não é limpa: o milk-shake leva bola, a água não, e o dono é
+    # quem sabe o que a máquina dele serve. Marcar produto por produto custa
+    # um toque uma vez; adivinhar errado custa uma pergunta boba na cara do
+    # cliente em cada garrafa de água vendida.
     pede_sabor: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
 
     # Um sabor a mais que este produto oferece, além dos dois do dia.

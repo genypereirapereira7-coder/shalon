@@ -242,9 +242,14 @@
 .abas__t {
   flex: 1;
   min-height: 44px;
+  padding: 0 2px;
   border-radius: var(--raio);
   color: var(--tinta-fraca);
   font-weight: 700;
+  /* Quatro abas num celular estreito: "Fechamento" já era a mais larga, e
+     "Histórico" entra no mesmo aperto. Menor aqui em vez de quebrar linha ou
+     estourar a barra. */
+  font-size: 13px;
 }
 
 .abas__t[aria-current="true"] {
@@ -435,7 +440,10 @@
   list-style: none;
 }
 
-.historico button {
+/* `.historico__linha`: mesma grade do `button`, pra semana e mês — que não
+   têm detalhe nenhum pra abrir, então são `<li>` sem botão dentro. */
+.historico button,
+.historico__linha {
   display: grid;
   grid-template-columns: 1fr auto;
   align-items: baseline;

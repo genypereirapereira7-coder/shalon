@@ -5,7 +5,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import selectinload
 
 from app.dependencias import IdentidadeDep, SessaoDep, SoDono
-from app.models.cardapio import Categoria, Produto
+from app.models.cardapio import CATEGORIAS_SABOR_OBRIGATORIO, Categoria, Produto
 from app.models.opcoes import ProdutoOpcaoGrupo
 from app.schemas.cardapio import (
     CardapioSaida,
@@ -120,6 +120,18 @@ async def editar_produto(produto_id: int, dados: ProdutoPatch, sessao: SessaoDep
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Produto não existe")
 
     campos = dados.model_dump(exclude_unset=True)
+
+    # Sorvete de bola, trufado, sundae e kids não têm essa escolha: desligar o
+    # sabor aqui deixaria a comanda saindo sem saber qual bola foi vendida.
+    # Milk-shake com sabor extra cai na mesma regra, por engano seria fácil
+    # esconder o chocolate que o produto sempre oferece.
+    if campos.get("pede_sabor") is False:
+        categoria = await sessao.get(Categoria, produto.categoria_id)
+        if produto.sabor_extra or (categoria and categoria.nome in CATEGORIAS_SABOR_OBRIGATORIO):
+            raise HTTPException(
+                status.HTTP_400_BAD_REQUEST,
+                "Este produto sempre pergunta o sabor — não dá pra desligar.",
+            )
 
     # Preço passa pela auditoria: é ela que permite reconstruir depois quanto
     # o item valia quando um pedido offline atrasado subir.

@@ -27,7 +27,7 @@ from sqlalchemy import select
 from app.config import get_config
 from app.db import Sessao
 from app.models.base import agora
-from app.models.cardapio import Categoria, Produto
+from app.models.cardapio import CATEGORIAS_SABOR_OBRIGATORIO, Categoria, Produto
 from app.models.opcoes import Opcao, OpcaoGrupo, ProdutoOpcaoGrupo
 from app.models.usuario import Papel, Usuario
 from app.seguranca import gerar_hash
@@ -74,6 +74,7 @@ GRUPOS = {
         ("Kiwi", 0),
         ("Menta", 0),
         ("Limão", 0),
+        ("Maracujá", 0),
     ],
     # O que reveste a borda da casquinha/cascão trufado. Todas incluídas no
     # preço: a borda não é adicional, é o que faz o item ser trufado.
@@ -196,16 +197,17 @@ CARDAPIO = [
             ("Copo 300ml", 1000, "#e8a0b8", [COBERTURA]),
             ("Copo 500ml", 1500, "#d98da8", [COBERTURA]),
             ("Copo 700ml", 1800, "#d98da8", [COBERTURA]),
+            ("Pote 1 litro", 2500, "#c77a96", [COBERTURA]),
         ],
     ),
     (
         "Trufados",
         2,
         [
-            # A borda vem primeiro na folha: é ela que define o item, e a
-            # cobertura é o acabamento por cima.
-            ("Casquinha Trufada", 1000, "#b07d4f", [BORDA, COBERTURA]),
-            ("Cascão Trufado", 1300, "#b07d4f", [BORDA, COBERTURA]),
+            # Só a borda: o trufado já vem com o acabamento dela, e oferecer
+            # cobertura por cima também virou escolha demais pro item.
+            ("Casquinha Trufada", 1000, "#b07d4f", [BORDA]),
+            ("Cascão Trufado", 1300, "#b07d4f", [BORDA]),
         ],
     ),
     (
@@ -242,10 +244,12 @@ CARDAPIO = [
         6,
         [
             # O milk-shake tem chocolate sempre disponível, além dos dois
-            # sabores do dia. O balcão escolhe um ou mistura dois.
-            ("Milk-shake 300ml", 1400, "#e0a96d", [], "Chocolate"),
-            ("Milk-shake 500ml", 1600, "#e0a96d", [], "Chocolate"),
-            ("Milk-shake 700ml", 1800, "#cf9450", [], "Chocolate"),
+            # sabores do dia. O balcão escolhe um ou mistura dois. Cobertura
+            # por cima é o mesmo grupo da casquinha — o doce de café fica de
+            # fora porque o dele já é fechado (sabor e tudo mais).
+            ("Milk-shake 300ml", 1400, "#e0a96d", [COBERTURA], "Chocolate"),
+            ("Milk-shake 500ml", 1600, "#e0a96d", [COBERTURA], "Chocolate"),
+            ("Milk-shake 700ml", 1800, "#cf9450", [COBERTURA], "Chocolate"),
             # Sabor fechado, tamanho único — por isso não entra na escada de
             # 300/500/700 dos outros, e não oferece escolha nenhuma.
             ("Milk-shake doce de café", 1800, "#cf9450", []),
@@ -264,6 +268,9 @@ CARDAPIO = [
         [
             ("Água mineral sem gás", 300, "#8fc7e8", []),
             ("Água mineral com gás", 300, "#8fc7e8", []),
+            ("Coca-cola latinha", 500, "#c0392b", []),
+            ("Pepsi latinha", 500, "#1f4e8c", []),
+            ("Água saborizada limão", 800, "#a8d84f", []),
         ],
     ),
 ]
@@ -431,7 +438,8 @@ async def _semear_produtos(
                     sabor_extra=sabor_extra,
                     # Sabor extra só serve pra quem pergunta o sabor: ele é uma
                     # terceira opção na lista, não uma receita fechada.
-                    pede_sabor=bool(sabor_extra),
+                    pede_sabor=bool(sabor_extra)
+                    or nome_cat in CATEGORIAS_SABOR_OBRIGATORIO,
                 )
                 sessao.add(produto)
                 await sessao.flush()
@@ -447,7 +455,9 @@ async def _semear_produtos(
 
             # Produto com sabor extra e sem `pede_sabor` esconderia a própria
             # opção que acabou de ganhar: a lista existiria e ninguém a veria.
-            if sabor_extra and not produto.pede_sabor:
+            # Mesma lógica pras categorias obrigatórias: um produto criado antes
+            # desta regra existir não pode ficar pra trás só porque já existia.
+            if (sabor_extra or nome_cat in CATEGORIAS_SABOR_OBRIGATORIO) and not produto.pede_sabor:
                 produto.pede_sabor = True
                 ajustados.append(f"{nome_prod}: passa a perguntar o sabor")
 
@@ -485,6 +495,24 @@ async def _semear_produtos(
                     )
                 )
                 criados.append(f"{nome_prod} oferece {nome_grupo}")
+
+            # O inverso da sincronização acima: um grupo que saiu da lista
+            # aqui (o trufado que deixou de oferecer cobertura, por exemplo)
+            # precisa sair também do banco que já rodava — senão este arquivo
+            # não é mais "a única fonte", é só a fonte de quem nunca mudou de
+            # ideia.
+            grupos_atuais = {grupos[nome_grupo].id for nome_grupo, _, _ in vinculos}
+            vinculados = (
+                await sessao.execute(
+                    select(ProdutoOpcaoGrupo).where(
+                        ProdutoOpcaoGrupo.produto_id == produto.id
+                    )
+                )
+            ).scalars()
+            for vinculo in vinculados:
+                if vinculo.grupo_id not in grupos_atuais:
+                    ajustados.append(f"{nome_prod}: não oferece mais {vinculo.grupo.nome}")
+                    await sessao.delete(vinculo)
 
 
 if __name__ == "__main__":

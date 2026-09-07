@@ -74,6 +74,23 @@ class ResumoDia(BaseModel):
     apurado_em: Utc
 
 
+class FechamentoAgrupadoSaida(BaseModel):
+    """Semana ou mês somados a partir dos fechamentos diários já gravados.
+
+    Não existe tabela própria pra isto — inventar uma faria dois números de
+    faturamento que podem divergir. É sempre soma do que já foi fechado dia a
+    dia, então `qtd_dias` conta quantos dias do período entraram na soma: um
+    mês com um fechamento faltando aparece com `qtd_dias` menor, em vez de
+    fingir que o mês inteiro está ali.
+    """
+
+    inicio: date
+    fim: date
+    total_centavos: int
+    qtd_pedidos: int
+    qtd_dias: int
+
+
 class FecharEntrada(BaseModel):
     """Corpo do POST /fechamento. Sem data = fecha o dia operacional corrente."""
 

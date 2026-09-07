@@ -31,6 +31,11 @@ const CHAVE_SABORES = "shalon.sabores";
  *  O servidor aplica o mesmo teto (`app/models/sabor.py`). */
 const MAX_SABORES = 2;
 const INTERVALO_SINCRONIA_MS = 15000;
+// Rede de segurança do WebSocket: sabor do dia e o 🍦 de cada produto só
+// chegam aqui pelo evento — sem isto, um socket que nunca conecta (proxy da
+// loja, celular em segundo plano, wifi capenga) deixaria o balcão oferecendo
+// o sabor de ontem até alguém fechar e abrir o app de novo.
+const INTERVALO_CARDAPIO_MS = 60000;
 
 const estado = {
   cardapio: null,
@@ -95,7 +100,16 @@ async function iniciar() {
     sincronizar();
     impressora.retomar();
   }, INTERVALO_SINCRONIA_MS);
+  setInterval(sincronizarCardapio, INTERVALO_CARDAPIO_MS);
   fila.limparAntigos().catch(() => {});
+}
+
+/** Refaz o mesmo trabalho do evento `sabor.alterado`/`preco.alterado`, pra
+ *  quando o socket que devia ter avisado nunca chegou a conectar. */
+async function sincronizarCardapio() {
+  if (!api.estaLogado() || estado.escolha) return;
+  await baixarCardapio({ silencioso: true });
+  await carregarSabores();
 }
 
 function registrarServiceWorker() {
@@ -288,15 +302,43 @@ function ligarSocket() {
 
       if (evento !== "preco.alterado") return;
 
-      // Não no meio de uma montagem: o `aplicarCardapio` remonta o mapa de
-      // opções e redesenha a grade, e a folha de acompanhamentos aberta ficaria
-      // apontando pra um produto que não existe mais. O preço novo entra assim
-      // que o funcionário fechar a folha, pela sincronia de sempre.
+      // Não no meio de uma montagem: redesenhar a grade agora faria a folha de
+      // acompanhamentos aberta ficar apontando pra um produto que não existe
+      // mais. O preço novo entra assim que o funcionário fechar a folha, pela
+      // sincronia de sempre.
       if (estado.escolha) return;
 
-      baixarCardapio({ silencioso: true });
+      // O evento já traz o produto inteiro — buscar `/cardapio` de novo só
+      // pra aplicar isto era uma ida e volta ao servidor a cada preço ou 🍦
+      // trocado, exatamente o atraso que não devia existir numa tela que já
+      // recebeu o dado. Só quando o produto é novidade aqui (acabou de ser
+      // reativado, por exemplo) vale buscar tudo de novo.
+      if (!aplicarProdutoNoCardapio(dados)) baixarCardapio({ silencioso: true });
     },
   });
+}
+
+/** Ver `aplicarProdutoNoCardapio` do `frontend/dono/app.js` — mesma ideia,
+ *  com um cuidado a mais: esta tela só lista produto ativo, então um produto
+ *  desativado agora precisa sumir da grade, não só ficar marcado por baixo. */
+function aplicarProdutoNoCardapio(atualizado) {
+  if (!estado.cardapio) return false;
+
+  for (const categoria of estado.cardapio.categorias) {
+    const indice = categoria.produtos.findIndex((p) => p.id === atualizado.id);
+    if (indice === -1) continue;
+
+    if (atualizado.ativo) {
+      categoria.produtos[indice] = { ...atualizado, grupos: categoria.produtos[indice].grupos };
+    } else {
+      categoria.produtos.splice(indice, 1);
+    }
+
+    localStorage.setItem(CHAVE_CARDAPIO, JSON.stringify(estado.cardapio));
+    desenharProdutos();
+    return true;
+  }
+  return false;
 }
 
 async function baixarCardapio({ silencioso = false } = {}) {
@@ -412,6 +454,11 @@ function desenharCategorias() {
 
 function desenharProdutos() {
   const area = $("produtos");
+  // Um preço mudando no meio da grade não pode jogar quem está rolado lá
+  // embaixo escolhendo o produto de volta pro topo. Trocar de categoria
+  // continua indo pro topo — o `onclick` de `desenharCategorias` pisa nisto
+  // de propósito, depois de chamar esta função.
+  const rolagem = area.scrollTop;
   area.innerHTML = "";
 
   const categoria = estado.cardapio.categorias.find((c) => c.id === estado.categoriaAtiva);
@@ -450,6 +497,8 @@ function desenharProdutos() {
         : adicionarLinha(produto.id, []);
     area.append(botao);
   }
+
+  area.scrollTop = rolagem;
 }
 
 // ================================================================== carrinho
@@ -815,7 +864,9 @@ async function carregarSabores() {
   try {
     estado.sabores = await api.pedir("GET", "/sabores");
     gravarSaboresLocais(estado.sabores);
-    desenharProdutos();
+    // Mesma cautela do evento do socket: redesenhar aqui trocaria os botões
+    // debaixo do dedo de quem está com a folha de escolha aberta.
+    if (!estado.escolha) desenharProdutos();
   } catch {
     // Offline: vale o que ficou no aparelho da última vez. O balcão continua
     // vendendo, que é a regra desta tela inteira.

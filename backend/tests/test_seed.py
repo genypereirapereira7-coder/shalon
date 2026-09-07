@@ -144,16 +144,26 @@ async def test_sem_cobertura_e_a_primeira_da_lista(semeado):
     assert opcoes[0].preco_extra_centavos == 0
 
 
-async def test_trufado_pede_borda_e_cobertura(semeado):
-    """Duas escolhas obrigatórias, a borda primeiro: é ela que define o item."""
+async def test_trufado_pede_so_a_borda(semeado):
+    """Uma escolha obrigatória: a borda é o que define o item.
+
+    O trufado já veio com cobertura no cardápio (§seed.py), mas isso virou
+    escolha demais pro item — só a borda ficou.
+    """
     async with semeado() as sessao:
         for nome in ("Casquinha Trufada", "Cascão Trufado"):
             borda = await _vinculo(sessao, nome, "Bordas do trufado")
-            cobertura = await _vinculo(sessao, nome, "Coberturas")
-
             assert (borda.min_escolhas, borda.max_escolhas) == (1, 1)
-            assert (cobertura.min_escolhas, cobertura.max_escolhas) == (1, 1)
-            assert borda.ordem < cobertura.ordem
+
+            cobertura = (
+                await sessao.execute(
+                    select(ProdutoOpcaoGrupo)
+                    .join(Produto, Produto.id == ProdutoOpcaoGrupo.produto_id)
+                    .join(OpcaoGrupo, OpcaoGrupo.id == ProdutoOpcaoGrupo.grupo_id)
+                    .where(Produto.nome == nome, OpcaoGrupo.nome == "Coberturas")
+                )
+            ).scalar_one_or_none()
+            assert cobertura is None
 
         bordas = (
             await sessao.execute(

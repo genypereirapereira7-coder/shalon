@@ -60,6 +60,7 @@
     <button class="abas__t" data-aba="hoje" aria-current="true">Hoje</button>
     <button class="abas__t" data-aba="cardapio" aria-current="false">Cardápio</button>
     <button class="abas__t" data-aba="fechamento" aria-current="false">Fechamento</button>
+    <button class="abas__t" data-aba="historico" aria-current="false">Histórico</button>
   </nav>
 
   <!-- ------------------------------------------------------------- HOJE -->
@@ -159,10 +160,33 @@
       <h2 class="bloco__titulo">Detalhe por item</h2>
       <ul id="f-itens" class="ranking"></ul>
     </section>
+  </main>
+
+  <!-- ------------------------------------------------------- HISTÓRICO -->
+  <main id="aba-historico" class="conteudo" hidden>
+    <p class="fraco conteudo__dica">
+      Só o valor final de cada período — pra abrir o detalhe de um dia, toque
+      nele aqui embaixo.
+    </p>
 
     <section class="bloco">
-      <h2 class="bloco__titulo">Dias fechados</h2>
+      <h2 class="bloco__titulo">Por dia</h2>
       <ul id="f-historico" class="historico"></ul>
+    </section>
+
+    <section class="bloco">
+      <h2 class="bloco__titulo">Por semana</h2>
+      <ul id="f-historico-semanal" class="historico"></ul>
+    </section>
+
+    <section class="bloco">
+      <h2 class="bloco__titulo">Por mês</h2>
+      <ul id="f-historico-mensal" class="historico"></ul>
+    </section>
+
+    <section class="bloco">
+      <h2 class="bloco__titulo">Por ano</h2>
+      <ul id="f-historico-anual" class="historico"></ul>
     </section>
   </main>
 </section>

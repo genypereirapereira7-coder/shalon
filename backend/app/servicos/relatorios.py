@@ -13,7 +13,9 @@ por isso ela também aparece separada. Sem isso o dono compararia o relatório
 com o caixa e acharia que faltou dinheiro.
 """
 
+from collections import defaultdict
 from datetime import date
+from typing import Callable
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -24,6 +26,7 @@ from app.models.fechamento import FechamentoDia
 from app.models.pedido import Pedido, PedidoItem, StatusPedido
 from app.models.usuario import Usuario
 from app.schemas.relatorio import (
+    FechamentoAgrupadoSaida,
     FechamentoSaida,
     ItemVendido,
     ResumoDia,
@@ -90,6 +93,21 @@ async def historico(sessao: AsyncSession, limite: int = 60) -> list[FechamentoSa
     return [_saida_fechamento(f, nome) for f, nome in (await sessao.execute(consulta)).all()]
 
 
+async def historico_semanal(sessao: AsyncSession, limite: int = 26) -> list[FechamentoAgrupadoSaida]:
+    """Fechamentos diários somados por semana ISO (segunda a domingo)."""
+    return await _historico_agrupado(sessao, limite, lambda d: d.isocalendar()[:2])
+
+
+async def historico_mensal(sessao: AsyncSession, limite: int = 12) -> list[FechamentoAgrupadoSaida]:
+    """Fechamentos diários somados por mês corrido."""
+    return await _historico_agrupado(sessao, limite, lambda d: (d.year, d.month))
+
+
+async def historico_anual(sessao: AsyncSession, limite: int = 5) -> list[FechamentoAgrupadoSaida]:
+    """Fechamentos diários somados por ano corrido."""
+    return await _historico_agrupado(sessao, limite, lambda d: (d.year, 0))
+
+
 async def fechar(
     sessao: AsyncSession,
     data: date,
@@ -131,6 +149,36 @@ async def fechar(
 
     usuario = await sessao.get(Usuario, usuario_id)
     return _saida_fechamento(fechamento, usuario.nome if usuario else "?")
+
+
+async def _historico_agrupado(
+    sessao: AsyncSession,
+    limite: int,
+    chave: Callable[[date], tuple[int, int]],
+) -> list[FechamentoAgrupadoSaida]:
+    """Agrupa em Python, não em SQL: são no máximo alguns milhares de linhas
+    (um fechamento por dia), e `strftime`/`date_trunc` divergem entre o
+    SQLite de dev e o Postgres de produção — a mesma armadilha que a
+    `0001_inicial` já bateu com `postgresql.UUID` (ver README, "Rodar
+    localmente"). Somar em Python funciona igual nos dois bancos.
+    """
+    consulta = select(FechamentoDia).order_by(FechamentoDia.data_operacional.desc())
+    grupos: dict[tuple[int, int], list[FechamentoDia]] = defaultdict(list)
+    for fechamento in (await sessao.execute(consulta)).scalars():
+        grupos[chave(fechamento.data_operacional)].append(fechamento)
+
+    saida = []
+    for grupo in sorted(grupos.values(), key=lambda g: g[0].data_operacional, reverse=True)[:limite]:
+        saida.append(
+            FechamentoAgrupadoSaida(
+                inicio=min(f.data_operacional for f in grupo),
+                fim=max(f.data_operacional for f in grupo),
+                total_centavos=sum(f.total_centavos for f in grupo),
+                qtd_pedidos=sum(f.qtd_pedidos for f in grupo),
+                qtd_dias=len(grupo),
+            )
+        )
+    return saida
 
 
 # ------------------------------------------------------------------ internos

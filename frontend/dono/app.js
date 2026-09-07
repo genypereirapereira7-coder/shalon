@@ -26,6 +26,12 @@ const INTERVALO_MS = 15000;
 const INTERVALO_COM_SOCKET_MS = 60000;
 const CHAVE_ULTIMO = "shalon.dono.ultimo-resumo";
 
+// Espelha `CATEGORIAS_SABOR_OBRIGATORIO` do backend (app/models/cardapio.py):
+// nessas categorias todo produto leva bola, e o servidor recusa desligar o
+// 🍦. Repetido aqui só pra travar o botão antes do toque virar um erro de
+// rede — quem manda é sempre o servidor.
+const CATEGORIAS_SABOR_OBRIGATORIO = new Set(["Sorvetes", "Trufados", "Sundae", "Kids"]);
+
 const estado = {
   aba: "hoje",
   /** Último resumo de HOJE que chegou do servidor (ou do cache local). */
@@ -196,7 +202,14 @@ function aplicarEvento(evento, dados) {
   // puxar o cardápio debaixo do editor aberto apagaria o que está sendo
   // digitado.
   if (evento === "preco.alterado" && estado.cardapio && estado.editando === null) {
-    carregarCardapio();
+    // O evento já traz o produto inteiro — inclusive quando o toque saiu
+    // deste mesmo celular, que recebe o próprio eco de volta pelo socket.
+    // Recarregar tudo aqui apagava a lista pra mostrar "Carregando…" e só
+    // voltava depois de uma ida e volta ao servidor: exatamente o atraso e o
+    // pulo pro topo que sobravam mesmo numa edição instantânea. Só quando o
+    // produto ainda não existe na lista (criado por outro caminho) vale ir
+    // buscar de novo.
+    if (!aplicarProdutoNoCardapio(dados)) carregarCardapio();
   }
 
   // Alguém pediu uma conta agora. Se a folha de funcionários está aberta, ela
@@ -227,6 +240,7 @@ function trocarAba(qual) {
   $("aba-hoje").hidden = qual !== "hoje";
   $("aba-cardapio").hidden = qual !== "cardapio";
   $("aba-fechamento").hidden = qual !== "fechamento";
+  $("aba-historico").hidden = qual !== "historico";
 
   // Carregamento sob demanda: quem abre o app pra ver o total do dia não
   // precisa baixar o cardápio inteiro nem o histórico de fechamentos.
@@ -235,6 +249,7 @@ function trocarAba(qual) {
   // desta tela, e abrir a aba é justamente o gesto de quem quer conferi-lo.
   if (qual === "cardapio") carregarSabores();
   if (qual === "fechamento") carregarFechamento();
+  if (qual === "historico") carregarHistorico();
 }
 
 /**
@@ -403,8 +418,36 @@ async function carregarCardapio() {
   }
 }
 
+/**
+ * Encaixa o produto que veio de um evento `preco.alterado` na lista já
+ * carregada, em vez de buscar tudo de novo. `grupos` não vem no evento (o
+ * PATCH de preço/ativo/sabor não mexe em acompanhamento nenhum) — preserva o
+ * que já está na tela, senão o produto perderia a lista até o próximo
+ * recarregamento inteiro.
+ *
+ * Devolve `false` quando o produto não está na lista ainda, pra quem chamou
+ * decidir buscar de novo.
+ */
+function aplicarProdutoNoCardapio(atualizado) {
+  for (const categoria of estado.cardapio.categorias) {
+    const alvo = categoria.produtos.find((p) => p.id === atualizado.id);
+    if (alvo) {
+      Object.assign(alvo, atualizado, { grupos: alvo.grupos });
+      desenharCardapio();
+      return true;
+    }
+  }
+  return false;
+}
+
 function desenharCardapio() {
   const area = $("lista-cardapio");
+  // A lista inteira é reconstruída a cada edição — inclusive uma edição só de
+  // preço, que troca um número. Sem isto, o dono rolando a lista pra editar o
+  // décimo produto voltaria pro topo a cada toque no ✓.
+  const painel = $("aba-cardapio");
+  const rolagem = painel.scrollTop;
+
   area.innerHTML = "";
 
   for (const categoria of estado.cardapio.categorias) {
@@ -415,7 +458,7 @@ function desenharCardapio() {
     bloco.innerHTML = `<h2 class="categoria__nome">${escapar(categoria.nome)}</h2>`;
 
     for (const produto of categoria.produtos) {
-      bloco.append(linhaProduto(produto));
+      bloco.append(linhaProduto(produto, categoria.nome));
     }
     area.append(bloco);
   }
@@ -423,9 +466,11 @@ function desenharCardapio() {
   $("painel-versao").textContent = estado.cardapio.versao
     ? `Cardápio de ${new Date(estado.cardapio.versao).toLocaleString("pt-BR")}`
     : "Cardápio sem data";
+
+  painel.scrollTop = rolagem;
 }
 
-function linhaProduto(produto) {
+function linhaProduto(produto, categoriaNome) {
   const linha = document.createElement("div");
   linha.className = "linha";
   linha.dataset.inativo = produto.ativo ? "0" : "1";
@@ -452,27 +497,39 @@ function linhaProduto(produto) {
 
   // O interruptor do sabor. Fica apagado quando o produto não leva bola: a
   // água mineral não pergunta sabor, e o dono é quem sabe onde está a
-  // fronteira — por isso é um toque por produto, e não uma regra por
-  // categoria.
+  // fronteira — por isso é um toque por produto na maioria dos casos.
+  // Exceção: sorvete, trufado, sundae e kids são sempre bola, então o
+  // servidor recusa desligar e o botão nasce travado (ver `travado` abaixo).
   //
   // Produto com sabor extra mostra qual é, ao lado do botão: o milk-shake
   // oferece chocolate além dos dois do dia, e um 🍦 sozinho não conta isso.
   // O sabor extra não se edita aqui — é estrutura, definida no `seed.py` —,
   // mas aparece, porque um produto que oferece algo que a tela não mostra é o
   // tipo de coisa que faz alguém achar que o sistema está errado.
+  const travado =
+    Boolean(produto.sabor_extra) || CATEGORIAS_SABOR_OBRIGATORIO.has(categoriaNome);
+
   const sabor = document.createElement("button");
   sabor.className = "linha__sabor";
   sabor.dataset.ligado = produto.pede_sabor ? "1" : "0";
   sabor.textContent = produto.sabor_extra ? `🍦+${produto.sabor_extra}` : "🍦";
-  sabor.title = produto.pede_sabor
-    ? "Pergunta o sabor do dia — toque pra parar de perguntar"
-    : "Não pergunta o sabor — toque pra passar a perguntar";
+  if (travado) {
+    sabor.title = "Este tipo de produto sempre pergunta o sabor — não dá pra desligar";
+  } else {
+    sabor.title = produto.pede_sabor
+      ? "Pergunta o sabor do dia — toque pra parar de perguntar"
+      : "Não pergunta o sabor — toque pra passar a perguntar";
+  }
   if (produto.sabor_extra) {
     sabor.title += `. Este oferece ${produto.sabor_extra} além dos dois do dia.`;
   }
   sabor.setAttribute("aria-label", `${produto.nome}: ${sabor.title}`);
   sabor.setAttribute("aria-pressed", produto.pede_sabor ? "true" : "false");
-  sabor.onclick = () => alternarSabor(produto);
+  if (travado) {
+    sabor.disabled = true;
+  } else {
+    sabor.onclick = () => alternarSabor(produto);
+  }
 
   const ativo = document.createElement("button");
   ativo.className = "linha__ativo";
@@ -666,11 +723,20 @@ async function carregarFechamento() {
   } else if (estado.resumoFechamento) {
     desenharFechamento(estado.resumoFechamento);
   }
-
-  await carregarHistorico();
 }
 
+/** As três listas da aba Histórico — dia, semana e mês —, sempre juntas
+ *  porque é a mesma aba e o mesmo gesto de abrir ela. */
 async function carregarHistorico() {
+  await Promise.all([
+    carregarHistoricoDiario(),
+    carregarHistoricoAgrupado("semanal", "f-historico-semanal", "Nenhuma semana fechada ainda."),
+    carregarHistoricoAgrupado("mensal", "f-historico-mensal", "Nenhum mês fechado ainda."),
+    carregarHistoricoAgrupado("anual", "f-historico-anual", "Nenhum ano fechado ainda."),
+  ]);
+}
+
+async function carregarHistoricoDiario() {
   try {
     estado.historico = await api.pedir("GET", "/fechamento?limite=60");
     marcarOnline(true);
@@ -680,6 +746,44 @@ async function carregarHistorico() {
     $("f-historico").innerHTML = `<li class="vazio">${escapar(
       erro instanceof api.ErroRede ? "Sem conexão." : erro.message,
     )}</li>`;
+  }
+}
+
+async function carregarHistoricoAgrupado(caminho, idLista, vazioTexto) {
+  try {
+    const grupos = await api.pedir("GET", `/fechamento/${caminho}`);
+    marcarOnline(true);
+    desenharHistoricoAgrupado($(idLista), grupos, vazioTexto);
+  } catch (erro) {
+    if (erro instanceof api.ErroRede) marcarOnline(false);
+    $(idLista).innerHTML = `<li class="vazio">${escapar(
+      erro instanceof api.ErroRede ? "Sem conexão." : erro.message,
+    )}</li>`;
+  }
+}
+
+/** Semana e mês só mostram o valor final (§ pedido do dono): sem botão, sem
+ *  detalhe por item — pra isso existe o dia, que continua clicável. */
+function desenharHistoricoAgrupado(lista, grupos, vazioTexto) {
+  lista.innerHTML = "";
+
+  if (!grupos.length) {
+    lista.innerHTML = `<li class="vazio">${escapar(vazioTexto)}</li>`;
+    return;
+  }
+
+  for (const grupo of grupos) {
+    const li = document.createElement("li");
+    li.className = "historico__linha";
+    const periodo =
+      grupo.inicio === grupo.fim
+        ? dataBonita(grupo.inicio)
+        : `${dataBonita(grupo.inicio)} – ${dataBonita(grupo.fim)}`;
+    li.innerHTML =
+      `<span class="data">${escapar(periodo)}</span>` +
+      `<span class="quem">${contar(grupo.qtd_dias, "dia fechado", "dias fechados")}</span>` +
+      `<span class="total">${reais(grupo.total_centavos)}</span>`;
+    lista.append(li);
   }
 }
 
@@ -749,6 +853,9 @@ async function verDia(data) {
     estado.dataFechamento = data;
     estado.resumoFechamento = resumo;
     marcarOnline(true);
+    // O dia é clicado na aba Histórico, mas o detalhe mora na Fechamento —
+    // é lá que estão o total, a situação e o ranking por item.
+    trocarAba("fechamento");
     desenharFechamento(resumo);
     $("aba-fechamento").scrollTop = 0;
   } catch (erro) {
@@ -1059,6 +1166,7 @@ function ligarEventos() {
     await atualizar();
     if (estado.aba === "cardapio") await carregarCardapio();
     if (estado.aba === "fechamento") await carregarFechamento();
+    if (estado.aba === "historico") await carregarHistorico();
   };
   for (const alvo of document.querySelectorAll("[data-fechar]")) {
     alvo.onclick = () => ($("painel").hidden = true);

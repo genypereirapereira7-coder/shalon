@@ -9,7 +9,12 @@ from datetime import date
 from fastapi import APIRouter, HTTPException, Query, status
 
 from app.dependencias import SessaoDep, SoDono
-from app.schemas.relatorio import FechamentoSaida, FecharEntrada, ResumoDia
+from app.schemas.relatorio import (
+    FechamentoAgrupadoSaida,
+    FechamentoSaida,
+    FecharEntrada,
+    ResumoDia,
+)
 from app.servicos import relatorios as servico
 from app.servicos.dia_operacional import dia_atual
 
@@ -39,6 +44,36 @@ async def listar_fechamentos(
     limite: int = Query(default=60, ge=1, le=365),
 ):
     return await servico.historico(sessao, limite)
+
+
+@rotas.get("/fechamento/semanal", response_model=list[FechamentoAgrupadoSaida])
+async def listar_fechamentos_semanais(
+    sessao: SessaoDep,
+    _: SoDono,
+    limite: int = Query(default=26, ge=1, le=104),
+):
+    """Só o valor final por semana — soma dos dias já fechados, nada novo."""
+    return await servico.historico_semanal(sessao, limite)
+
+
+@rotas.get("/fechamento/mensal", response_model=list[FechamentoAgrupadoSaida])
+async def listar_fechamentos_mensais(
+    sessao: SessaoDep,
+    _: SoDono,
+    limite: int = Query(default=12, ge=1, le=60),
+):
+    """Mesma soma, por mês corrido."""
+    return await servico.historico_mensal(sessao, limite)
+
+
+@rotas.get("/fechamento/anual", response_model=list[FechamentoAgrupadoSaida])
+async def listar_fechamentos_anuais(
+    sessao: SessaoDep,
+    _: SoDono,
+    limite: int = Query(default=5, ge=1, le=50),
+):
+    """Mesma soma, por ano corrido."""
+    return await servico.historico_anual(sessao, limite)
 
 
 @rotas.post("/fechamento", response_model=FechamentoSaida, status_code=status.HTTP_201_CREATED)
