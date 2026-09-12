@@ -528,7 +528,7 @@ function linhaProduto(produto, categoriaNome) {
   if (travado) {
     sabor.disabled = true;
   } else {
-    sabor.onclick = () => alternarSabor(produto);
+    sabor.onclick = () => alternarSabor(produto, sabor);
   }
 
   const ativo = document.createElement("button");
@@ -536,7 +536,7 @@ function linhaProduto(produto, categoriaNome) {
   ativo.textContent = produto.ativo ? "👁" : "🚫";
   ativo.title = produto.ativo ? "Tirar do cardápio" : "Voltar pro cardápio";
   ativo.setAttribute("aria-label", ativo.title);
-  ativo.onclick = () => alternarAtivo(produto);
+  ativo.onclick = () => alternarAtivo(produto, ativo);
 
   linha.append(preco, sabor, ativo);
   return linha;
@@ -606,7 +606,11 @@ async function salvarPreco(produto, texto) {
     const atualizado = await api.pedir("PATCH", `/produtos/${produto.id}`, {
       preco_centavos: centavos,
     });
-    Object.assign(produto, atualizado);
+    // `grupos` preservado: a resposta do PATCH traz `grupos: []` (a rota valida
+    // o produto sem os vínculos), e um `Object.assign` cru apagaria a lista de
+    // acompanhamentos que já estava na tela. O `aplicarProdutoNoCardapio` se
+    // protege disso trinta linhas acima; estes três caminhos furavam a proteção.
+    Object.assign(produto, atualizado, { grupos: produto.grupos });
     marcarOnline(true);
     fecharEditor();
     aviso(`${produto.nome}: ${reais(centavos)}`, "ok");
@@ -621,39 +625,78 @@ async function salvarPreco(produto, texto) {
   }
 }
 
-async function alternarAtivo(produto) {
+/**
+ * Enquanto o servidor não responde, o botão fica apagado e travado.
+ *
+ * Sem isto o toque não dizia nada: o 🍦 só mudava quando o PATCH voltava, e
+ * numa rede ruim isso é um segundo de tela parada. O dono conclui que não
+ * pegou e toca de novo — e o segundo toque manda o mesmo valor outra vez,
+ * porque o `produto` local ainda não mudou. Não corrompia nada, mas eram duas
+ * idas ao servidor e a sensação de aparelho travado.
+ *
+ * O `finally` devolve o botão mesmo quando a lista foi redesenhada por baixo:
+ * aí o nó daqui já saiu da tela e mexer nele não faz mal nenhum.
+ */
+async function comBotaoOcupado(botao, trabalho) {
+  if (botao) {
+    botao.disabled = true;
+    botao.dataset.ocupado = "1";
+  }
   try {
-    const atualizado = await api.pedir("PATCH", `/produtos/${produto.id}`, {
-      ativo: !produto.ativo,
-    });
-    Object.assign(produto, atualizado);
-    marcarOnline(true);
-    desenharCardapio();
-    aviso(produto.ativo ? `${produto.nome} está no cardápio` : `${produto.nome} saiu do cardápio`, "ok");
-  } catch (erro) {
-    if (erro instanceof api.ErroRede) marcarOnline(false);
-    aviso(erro instanceof api.ErroRede ? "Sem conexão" : erro.message, "erro");
+    return await trabalho();
+  } finally {
+    if (botao) {
+      botao.disabled = false;
+      delete botao.dataset.ocupado;
+    }
   }
 }
 
-async function alternarSabor(produto) {
-  try {
-    const atualizado = await api.pedir("PATCH", `/produtos/${produto.id}`, {
-      pede_sabor: !produto.pede_sabor,
-    });
-    Object.assign(produto, atualizado);
-    marcarOnline(true);
-    desenharCardapio();
-    aviso(
-      produto.pede_sabor
-        ? `${produto.nome} agora pergunta o sabor`
-        : `${produto.nome} não pergunta mais o sabor`,
-      "ok",
-    );
-  } catch (erro) {
-    if (erro instanceof api.ErroRede) marcarOnline(false);
-    aviso(erro instanceof api.ErroRede ? "Sem conexão" : erro.message, "erro");
-  }
+async function alternarAtivo(produto, botao) {
+  return comBotaoOcupado(botao, async () => {
+    try {
+      const atualizado = await api.pedir("PATCH", `/produtos/${produto.id}`, {
+        ativo: !produto.ativo,
+      });
+      // `grupos` preservado: a resposta do PATCH traz `grupos: []` (a rota valida
+      // o produto sem os vínculos), e um `Object.assign` cru apagaria a lista de
+      // acompanhamentos que já estava na tela. O `aplicarProdutoNoCardapio` se
+      // protege disso trinta linhas acima; estes três caminhos furavam a proteção.
+      Object.assign(produto, atualizado, { grupos: produto.grupos });
+      marcarOnline(true);
+      desenharCardapio();
+      aviso(
+        produto.ativo ? `${produto.nome} está no cardápio` : `${produto.nome} saiu do cardápio`,
+        "ok",
+      );
+    } catch (erro) {
+      if (erro instanceof api.ErroRede) marcarOnline(false);
+      aviso(erro instanceof api.ErroRede ? "Sem conexão" : erro.message, "erro");
+    }
+  });
+}
+
+async function alternarSabor(produto, botao) {
+  return comBotaoOcupado(botao, async () => {
+    try {
+      const atualizado = await api.pedir("PATCH", `/produtos/${produto.id}`, {
+        pede_sabor: !produto.pede_sabor,
+      });
+      // Mesma preservação de `grupos` do `alternarAtivo`, pelo mesmo motivo.
+      Object.assign(produto, atualizado, { grupos: produto.grupos });
+      marcarOnline(true);
+      desenharCardapio();
+      aviso(
+        produto.pede_sabor
+          ? `${produto.nome} agora pergunta o sabor`
+          : `${produto.nome} não pergunta mais o sabor`,
+        "ok",
+      );
+    } catch (erro) {
+      if (erro instanceof api.ErroRede) marcarOnline(false);
+      aviso(erro instanceof api.ErroRede ? "Sem conexão" : erro.message, "erro");
+    }
+  });
 }
 
 // =============================================================== sabor do dia

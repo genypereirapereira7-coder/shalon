@@ -59,6 +59,19 @@ const estado = {
   /** Motivo marcado nos botões da folha de exclusão */
   motivoEscolhido: null,
   sincronizando: false,
+  /**
+   * Uma venda já está a caminho da fila.
+   *
+   * O ENVIAR grava no IndexedDB antes de limpar o carrinho, e entre as duas
+   * coisas há um `await`. Sem esta trava, dois toques nessa janela viravam
+   * **dois pedidos de verdade**: cada chamada gera o seu `id_cliente`, então a
+   * idempotência do servidor não vê parentesco entre eles. Saíam duas comandas
+   * e o dobro do valor no relatório do dia — e o toque repetido é justamente o
+   * que se faz quando o aparelho está lento e o primeiro parece não ter pegado.
+   */
+  enviando: false,
+  /** produto_id → produto. Índice do cardápio, refeito a cada aplicação. */
+  porId: new Map(),
   /** false depois de uma falha de rede; o pontinho do topo vive disto */
   online: navigator.onLine,
   saidaConfirmada: false,
@@ -76,7 +89,8 @@ const $ = (id) => document.getElementById(id);
  * chamada — nada mais neste arquivo muda.
  */
 const impressora = criarImpressora({
-  aoMudar: ({ pendentes, ultimoErro }) => atualizarFaixaImpressao(pendentes, ultimoErro),
+  aoMudar: ({ pendentes, ultimoErro, semPapel }) =>
+    atualizarFaixaImpressao(pendentes, ultimoErro, semPapel),
 });
 
 // ==================================================================== início
@@ -251,7 +265,7 @@ async function abrirVenda() {
   // Comanda que ficou de ontem, ou de antes do app ser fechado: a fila mora no
   // localStorage e sobrevive ao recarregamento, então a faixa precisa aparecer
   // já na abertura, e não só na próxima venda.
-  atualizarFaixaImpressao(impressora.pendentes(), null);
+  atualizarFaixaImpressao(impressora.pendentes(), null, impressora.semPapel());
   impressora.retomar();
 
   try {
@@ -320,7 +334,14 @@ function ligarSocket() {
 
 /** Ver `aplicarProdutoNoCardapio` do `frontend/dono/app.js` — mesma ideia,
  *  com um cuidado a mais: esta tela só lista produto ativo, então um produto
- *  desativado agora precisa sumir da grade, não só ficar marcado por baixo. */
+ *  desativado agora precisa sumir da grade, não só ficar marcado por baixo.
+ *
+ *  Termina pelo mesmo `reassentarCardapio` do caminho completo. Já não
+ *  terminou: por um tempo este atalho redesenhou só a grade, e o carrinho
+ *  ficava para trás. Um produto desativado com item no carrinho sumia da lista
+ *  mas continuava sendo enviado (o `enviar` varre o Map inteiro, sem filtro), e
+ *  o total caía pro valor dos adicionais — o funcionário falava um preço e
+ *  cobrava outro. Redesenhar a grade nunca foi o trabalho todo. */
 function aplicarProdutoNoCardapio(atualizado) {
   if (!estado.cardapio) return false;
 
@@ -334,8 +355,8 @@ function aplicarProdutoNoCardapio(atualizado) {
       categoria.produtos.splice(indice, 1);
     }
 
-    localStorage.setItem(CHAVE_CARDAPIO, JSON.stringify(estado.cardapio));
-    desenharProdutos();
+    gravarCardapioLocal(estado.cardapio);
+    reassentarCardapio();
     return true;
   }
   return false;
@@ -344,7 +365,7 @@ function aplicarProdutoNoCardapio(atualizado) {
 async function baixarCardapio({ silencioso = false } = {}) {
   try {
     const cardapio = await api.pedir("GET", "/cardapio");
-    localStorage.setItem(CHAVE_CARDAPIO, JSON.stringify(cardapio));
+    gravarCardapioLocal(cardapio);
     aplicarCardapio(cardapio);
     marcarOnline(true);
     if (!silencioso) aviso("Cardápio atualizado", "ok");
@@ -394,36 +415,84 @@ function lerCardapioLocal() {
   }
 }
 
+/** Guardar o cardápio nunca pode derrubar quem estava aplicando ele.
+ *
+ *  Em aparelho com armazenamento cheio, ou em aba anônima, o `setItem` levanta
+ *  — e sem este `catch` a exceção subia no meio de um evento do socket,
+ *  deixando a grade sem redesenhar por causa de um cache que é só conforto. */
+function gravarCardapioLocal(cardapio) {
+  try {
+    localStorage.setItem(CHAVE_CARDAPIO, JSON.stringify(cardapio));
+  } catch {
+    // O cardápio da sessão continua em memória; só não sobrevive a fechar o app.
+  }
+}
+
 function aplicarCardapio(cardapio) {
   estado.cardapio = cardapio;
 
   const existe = cardapio.categorias.some((c) => c.id === estado.categoriaAtiva);
   if (!existe) estado.categoriaAtiva = cardapio.categorias[0]?.id ?? null;
 
+  reassentarCardapio();
+}
+
+/**
+ * Põe a tela inteira de acordo com o `estado.cardapio` que está valendo agora.
+ *
+ * É o fecho dos dois caminhos que mexem no cardápio — o download completo e o
+ * atalho do evento `preco.alterado` — e existe justamente pra que não haja dois
+ * fechos. O atalho já redesenhou só a grade uma vez, e o que ficou de fora
+ * (índice de opções, carrinho, abas de categoria) foi exatamente o que quebrou.
+ */
+function reassentarCardapio() {
   estado.opcoes = new Map();
+  // Junto com o índice de opções, e pelo mesmo motivo: o `produtoPorId` era um
+  // `flatMap` do cardápio inteiro seguido de `find`, e ele é chamado três vezes
+  // por linha do carrinho a cada redesenho. Um carrinho de dez linhas montava e
+  // jogava fora trinta cópias da lista de produtos a cada toque no "+".
+  estado.porId = new Map();
   for (const produto of produtosTodos()) {
+    estado.porId.set(produto.id, produto);
     for (const grupo of produto.grupos ?? []) {
       for (const opcao of grupo.opcoes) estado.opcoes.set(opcao.id, opcao);
     }
   }
 
-  // Produto (ou acompanhamento) que saiu do cardápio não pode continuar no
-  // carrinho: o servidor recusaria a opção inexistente e a venda morreria no
-  // ENVIAR, com o cliente na frente.
-  const validos = new Set(produtosTodos().map((p) => p.id));
-  for (const [chave, linha] of estado.carrinho) {
-    const some =
-      !validos.has(linha.produto_id) || linha.opcoes.some((id) => !estado.opcoes.has(id));
-    if (some) estado.carrinho.delete(chave);
-  }
+  const perdidos = expurgarCarrinho();
 
   desenharCategorias();
   desenharProdutos();
   atualizarCarrinho();
 
-  $("painel-versao").textContent = cardapio.versao
-    ? `Cardápio de ${new Date(cardapio.versao).toLocaleString("pt-BR")}`
+  // Item que some do carrinho tem que ser dito em voz alta. O servidor aceita
+  // produto desativado (a venda aconteceu), então o que estava aqui não daria
+  // erro no ENVIAR — sairia calado, com o total errado na frente do cliente.
+  if (perdidos.length) {
+    mostrarErro(
+      `${plural(perdidos.length, "item saiu", "itens saíram")} do cardápio e ` +
+      `${perdidos.length === 1 ? "foi retirado" : "foram retirados"} do carrinho: ${perdidos.join(", ")}`,
+    );
+  }
+
+  $("painel-versao").textContent = estado.cardapio?.versao
+    ? `Cardápio de ${new Date(estado.cardapio.versao).toLocaleString("pt-BR")}`
     : "Cardápio sem data";
+}
+
+/** Tira do carrinho o que não existe mais no cardápio. Devolve os nomes. */
+function expurgarCarrinho() {
+  const validos = new Set(produtosTodos().map((p) => p.id));
+  const perdidos = [];
+
+  for (const [chave, linha] of estado.carrinho) {
+    const some =
+      !validos.has(linha.produto_id) || linha.opcoes.some((id) => !estado.opcoes.has(id));
+    if (!some) continue;
+    perdidos.push(linha.nome_congelado ?? `#${linha.produto_id}`);
+    estado.carrinho.delete(chave);
+  }
+  return perdidos;
 }
 
 function produtosTodos() {
@@ -431,7 +500,7 @@ function produtosTodos() {
 }
 
 function produtoPorId(id) {
-  return produtosTodos().find((p) => p.id === id) ?? null;
+  return estado.porId.get(id) ?? null;
 }
 
 function desenharCategorias() {
@@ -524,11 +593,21 @@ function adicionarLinha(produtoId, opcoes, quantidade = 1, sabores = []) {
   if (linha) {
     linha.quantidade = Math.min(99, linha.quantidade + quantidade);
   } else {
+    const produto = produtoPorId(produtoId);
     estado.carrinho.set(chave, {
       produto_id: produtoId,
       opcoes: [...opcoes].sort((a, b) => a - b),
       quantidade: Math.min(99, quantidade),
       sabores: [...sabores],
+      // Congelados no instante em que a linha entrou no carrinho.
+      //
+      // O sabor é só um código (`SABOR_1`) até alguém dar nome a ele, e o nome
+      // vem da máquina de hoje. Resolvendo na hora de desenhar, o dono trocando
+      // o sabor no meio de um atendimento trocava o que já estava no carrinho
+      // debaixo do funcionário — e apagando o sabor 2 a casquinha ficava sem
+      // sabor nenhum, calada. O que foi montado vai como foi montado.
+      nome_congelado: produto?.nome ?? `#${produtoId}`,
+      sabor_congelado: textoDosSabores(sabores, produto),
     });
   }
 
@@ -593,7 +672,12 @@ function atualizarCarrinho() {
     li.className = "item";
     // O sabor numa linha própria e acima dos acompanhamentos: é o que o
     // funcionário confere em voz alta com o cliente antes de finalizar.
-    const sabor = textoDosSabores(linha.sabores, produto);
+    //
+    // O congelado de `adicionarLinha` primeiro: o dono pode ter trocado a
+    // máquina desde que esta linha entrou, e o que o cliente pediu não muda
+    // por isso. O `textoDosSabores` fica de reserva pras linhas que entraram
+    // antes deste campo existir.
+    const sabor = linha.sabor_congelado ?? textoDosSabores(linha.sabores, produto);
 
     li.innerHTML =
       `<span class="item__nome">${escapar(produto.nome)}` +
@@ -658,8 +742,20 @@ function fecharEscolhas() {
   estado.escolha = null;
 }
 
+/**
+ * Monta a folha do zero. Só cria os nós — quem os pinta é o `atualizarEscolhas`.
+ *
+ * A separação existe porque a pintura acontece a cada toque e a montagem não.
+ * Antes eram a mesma função: tocar numa cobertura destruía e recriava os 22
+ * botões do açaí montado pra trocar uma borda de cor. Como o botão tocado era
+ * substituído por um nó novo, o próprio realce do toque morria no meio — o
+ * aparelho parecia ter ignorado o dedo.
+ *
+ * Dividir também tirou a regra duplicada: "esta opção está marcada?" e "falta
+ * escolher o quê?" eram calculadas aqui e de novo lá. Agora existem num lugar.
+ */
 function desenharEscolhas() {
-  const { produto, selecionadas } = estado.escolha;
+  const { produto } = estado.escolha;
   const area = $("escolhas-grupos");
   area.innerHTML = "";
 
@@ -668,39 +764,20 @@ function desenharEscolhas() {
   // trufado já segue no cardápio.
   if (pedeSabor(produto)) area.append(blocoDeSabor());
 
-  /**
-   * O primeiro grupo obrigatório que ainda não foi atendido, ou null.
-   *
-   * É o nome dele, e não um booleano, porque o botão travado precisa dizer o
-   * que falta: a folha do trufado tem dois grupos e rola, então "ADICIONAR
-   * apagado" sozinho manda o funcionário procurar o que está errado com o
-   * cliente esperando.
-   */
-  let pendente =
-    pedeSabor(produto) && estado.escolha.sabores.length === 0 ? "SABOR" : null;
-
   for (const grupo of produto.grupos) {
-    const marcadas = grupo.opcoes.filter((o) => selecionadas.has(o.id)).length;
-    const cheio = grupo.max_escolhas !== null && marcadas >= grupo.max_escolhas;
-    if (pendente === null && marcadas < grupo.min_escolhas) pendente = grupo.nome;
-
     const bloco = document.createElement("section");
     bloco.className = "grupo";
+    bloco.dataset.grupo = grupo.id;
     bloco.innerHTML =
       `<p class="grupo__titulo">${escapar(grupo.nome)}` +
-      `<span class="grupo__cota" data-obrigatorio="${marcadas < grupo.min_escolhas ? 1 : 0}">` +
-      `${escapar(textoCota(grupo, marcadas))}</span></p>` +
+      `<span class="grupo__cota"></span></p>` +
       `<div class="grupo__opcoes"></div>`;
 
     const opcoes = bloco.querySelector(".grupo__opcoes");
     for (const opcao of grupo.opcoes) {
-      const marcada = selecionadas.has(opcao.id);
       const botao = document.createElement("button");
       botao.className = "opcao";
-      botao.dataset.marcada = marcada ? "1" : "0";
-      // Cota estourada: as não marcadas apagam, mas continuam clicáveis pra
-      // explicar o porquê em vez de simplesmente não responder ao toque.
-      botao.dataset.bloqueada = !marcada && cheio ? "1" : "0";
+      botao.dataset.opcao = opcao.id;
       botao.innerHTML =
         `<span>${escapar(opcao.nome)}</span>` +
         (opcao.preco_extra_centavos
@@ -714,12 +791,84 @@ function desenharEscolhas() {
     area.append(bloco);
   }
 
+  atualizarEscolhas();
+}
+
+/**
+ * Repinta a folha que já está na tela: o que está marcado, o que a cota
+ * bloqueou, o total e o que ainda falta. Não cria nem remove nó nenhum.
+ */
+function atualizarEscolhas() {
+  const { produto, selecionadas, sabores: escolhidos } = estado.escolha;
+  const area = $("escolhas-grupos");
+
+  /**
+   * O primeiro grupo obrigatório que ainda não foi atendido, ou null.
+   *
+   * É o nome dele, e não um booleano, porque o botão travado precisa dizer o
+   * que falta: a folha do trufado tem dois grupos e rola, então "ADICIONAR
+   * apagado" sozinho manda o funcionário procurar o que está errado com o
+   * cliente esperando.
+   */
+  let pendente = pedeSabor(produto) && escolhidos.length === 0 ? "SABOR" : null;
+
+  const blocoSabor = area.querySelector('[data-grupo="sabor"]');
+  if (blocoSabor) {
+    const cheio = escolhidos.length >= MAX_SABORES;
+    pintarCota(blocoSabor, cotaDeSabor(escolhidos.length), escolhidos.length === 0);
+
+    for (const botao of blocoSabor.querySelectorAll("[data-sabor]")) {
+      const posicao = escolhidos.indexOf(botao.dataset.sabor);
+      const marcada = posicao >= 0;
+      botao.dataset.marcada = marcada ? "1" : "0";
+      // Cheio: as não marcadas apagam mas continuam clicáveis, pra explicar o
+      // porquê em vez de simplesmente não responder ao toque — a mesma regra
+      // que os acompanhamentos já seguem.
+      botao.dataset.bloqueada = !marcada && cheio ? "1" : "0";
+
+      // A ordem numerada só aparece quando há dois: com um sabor só, um "1"
+      // pendurado no botão é ruído. Com dois, é o que diz qual sai primeiro no
+      // papel — e o papel é conferido em voz alta com o cliente.
+      const ordem = botao.querySelector("[data-ordem]");
+      const mostrar = marcada && escolhidos.length > 1;
+      ordem.textContent = mostrar ? `${posicao + 1}º` : "";
+      // `hidden` e não texto vazio: o `.opcao` é um flex com `gap`, e um vão
+      // de 6px sobraria do lado do nome com o número fora.
+      ordem.hidden = !mostrar;
+    }
+  }
+
+  for (const grupo of produto.grupos) {
+    const bloco = area.querySelector(`[data-grupo="${grupo.id}"]`);
+    if (!bloco) continue;
+
+    const marcadas = grupo.opcoes.filter((o) => selecionadas.has(o.id)).length;
+    const cheio = grupo.max_escolhas !== null && marcadas >= grupo.max_escolhas;
+    if (pendente === null && marcadas < grupo.min_escolhas) pendente = grupo.nome;
+
+    pintarCota(bloco, textoCota(grupo, marcadas), marcadas < grupo.min_escolhas);
+
+    for (const botao of bloco.querySelectorAll("[data-opcao]")) {
+      const marcada = selecionadas.has(Number(botao.dataset.opcao));
+      botao.dataset.marcada = marcada ? "1" : "0";
+      // Cota estourada: as não marcadas apagam, mas continuam clicáveis pra
+      // explicar o porquê em vez de simplesmente não responder ao toque.
+      botao.dataset.bloqueada = !marcada && cheio ? "1" : "0";
+    }
+  }
+
   const total = produto.preco_centavos +
     [...selecionadas].reduce((soma, id) => soma + (estado.opcoes.get(id)?.preco_extra_centavos ?? 0), 0);
 
   $("escolhas-total").textContent = reais(total);
   $("escolhas-add").disabled = pendente !== null;
   $("escolhas-rotulo").textContent = pendente ? `FALTA: ${pendente}` : "ADICIONAR";
+}
+
+function pintarCota(bloco, texto, obrigatorio) {
+  const cota = bloco.querySelector(".grupo__cota");
+  cota.textContent = texto;
+  cota.dataset.obrigatorio = obrigatorio ? "1" : "0";
 }
 
 function textoCota(grupo, marcadas) {
@@ -750,7 +899,7 @@ function alternarOpcao(grupo, opcao) {
   }
 
   vibrar(10);
-  desenharEscolhas();
+  atualizarEscolhas();
 }
 
 function confirmarEscolhas() {
@@ -798,38 +947,23 @@ function textoDosSabores(escolhas, produto) {
 }
 
 function blocoDeSabor() {
-  const { produto, sabores: escolhidos } = estado.escolha;
-  const opcoes = listaDeSabores(produto);
-  const cheio = escolhidos.length >= MAX_SABORES;
+  const { produto } = estado.escolha;
 
   const bloco = document.createElement("section");
   bloco.className = "grupo";
+  bloco.dataset.grupo = "sabor";
   bloco.innerHTML =
-    `<p class="grupo__titulo">Sabor` +
-    `<span class="grupo__cota" data-obrigatorio="${escolhidos.length ? 0 : 1}">` +
-    `${escapar(cotaDeSabor(escolhidos.length))}</span></p>` +
+    `<p class="grupo__titulo">Sabor<span class="grupo__cota"></span></p>` +
     `<div class="grupo__opcoes"></div>`;
 
   const area = bloco.querySelector(".grupo__opcoes");
-  for (const [chave, rotulo] of opcoes) {
-    const posicao = escolhidos.indexOf(chave);
-    const marcada = posicao >= 0;
-
+  for (const [chave, rotulo] of listaDeSabores(produto)) {
     const botao = document.createElement("button");
     botao.className = "opcao";
-    botao.dataset.marcada = marcada ? "1" : "0";
-    // Cheio: as não marcadas apagam mas continuam clicáveis, pra explicar o
-    // porquê em vez de simplesmente não responder ao toque — a mesma regra que
-    // os acompanhamentos já seguem.
-    botao.dataset.bloqueada = !marcada && cheio ? "1" : "0";
+    botao.dataset.sabor = chave;
     botao.innerHTML =
       `<span>${escapar(rotulo)}</span>` +
-      // A ordem numerada só aparece quando há dois: com um sabor só, um "1"
-      // pendurado no botão é ruído. Com dois, é o que diz qual sai primeiro no
-      // papel — e o papel é conferido em voz alta com o cliente.
-      (marcada && escolhidos.length > 1
-        ? `<span class="opcao__extra">${posicao + 1}º</span>`
-        : "");
+      `<span class="opcao__extra" data-ordem hidden></span>`;
 
     botao.onclick = () => alternarSabor(chave);
     area.append(botao);
@@ -857,7 +991,7 @@ function alternarSabor(chave) {
   }
 
   vibrar(10);
-  desenharEscolhas();
+  atualizarEscolhas();
 }
 
 async function carregarSabores() {
@@ -876,7 +1010,11 @@ async function carregarSabores() {
 // ==================================================================== envio
 
 async function enviar() {
-  if (!estado.carrinho.size) return;
+  // A trava e o botão apagado dizem a mesma coisa por dois caminhos, de
+  // propósito: o `disabled` cobre o toque que o navegador ainda ia entregar, e
+  // a trava cobre a chamada que venha de outro lugar (tecla, script, um
+  // `onclick` disparado duas vezes pelo mesmo toque em aparelho lento).
+  if (estado.enviando || !estado.carrinho.size) return;
 
   const sessao = api.sessaoAtual();
   if (!sessao) {
@@ -884,6 +1022,39 @@ async function enviar() {
     return;
   }
 
+  // A trava vale **só até o carrinho esvaziar**, e não até o pedido subir.
+  //
+  // Segurá-la durante a subida seria trocar um defeito por outro pior: a
+  // próxima venda já pode ser montada enquanto a anterior sobe (é o que o
+  // `limparCarrinho` logo abaixo existe pra permitir), e numa rede ruim o POST
+  // demora segundos. O ENVIAR da venda seguinte ficaria mudo — e "apertar
+  // ENVIAR sempre funciona" é a regra que sustenta a fila inteira.
+  let registro;
+  estado.enviando = true;
+  $("btn-enviar").disabled = true;
+  try {
+    registro = await enfileirarVenda(sessao);
+  } catch (erro) {
+    // O IndexedDB recusou a gravação (armazenamento cheio, aba anônima). Antes
+    // isto subia como rejeição não tratada: o ENVIAR não fazia nada e não
+    // dizia nada, com o cliente esperando. O carrinho fica cheio de propósito
+    // — é a única cópia desta venda que existe.
+    mostrarErro(`Não consegui guardar o pedido: ${erro.message}. O carrinho continua aqui.`);
+    return;
+  } finally {
+    estado.enviando = false;
+    // Quem manda no botão daqui pra frente é o carrinho: depois do
+    // `limparCarrinho` ele está vazio e o botão continua apagado; se a gravação
+    // falhou, o carrinho segue cheio e o ENVIAR volta a valer pra nova tentativa.
+    $("btn-enviar").disabled = estado.carrinho.size === 0;
+  }
+
+  await enviarUm(registro, { avisar: true });
+  await atualizarFaixaFila();
+}
+
+/** Grava a venda na fila e limpa o carrinho. Devolve o registro gravado. */
+async function enfileirarVenda(sessao) {
   const itens = [...estado.carrinho.values()].map((linha) => {
     const produto = produtoPorId(linha.produto_id);
     return {
@@ -896,10 +1067,10 @@ async function enviar() {
       sabores: linha.sabores ?? [],
       // Guardados só pra mostrar na lista de recentes quando o pedido ainda
       // não subiu. Quem manda no preço é sempre o servidor.
-      nome: produto?.nome ?? `#${linha.produto_id}`,
+      nome: linha.nome_congelado ?? produto?.nome ?? `#${linha.produto_id}`,
       // O texto do sabor entra aqui pelo mesmo motivo que o nome do produto:
       // a comanda é impressa no celular, antes de o pedido subir.
-      sabor_texto: textoDosSabores(linha.sabores, produto),
+      sabor_texto: linha.sabor_congelado ?? textoDosSabores(linha.sabores, produto),
       opcoes_nomes: opcoesDe(linha.opcoes).map((o) => o.nome),
       preco_unit_centavos: precoUnitario(linha.produto_id, linha.opcoes),
     };
@@ -920,8 +1091,7 @@ async function enviar() {
   vibrar([18, 40, 18]);
   aviso("Pedido na fila…");
 
-  await enviarUm(registro, { avisar: true });
-  await atualizarFaixaFila();
+  return registro;
 }
 
 /**
@@ -1062,14 +1232,19 @@ async function atualizarFaixaFila() {
  * diferentes, com duas saídas diferentes — e uma faixa só, somando os dois,
  * faria o funcionário conferir o lugar errado.
  */
-function atualizarFaixaImpressao(pendentes, ultimoErro) {
+function atualizarFaixaImpressao(pendentes, ultimoErro, semPapel = pendentes) {
   const faixa = $("faixa-impressao");
 
   faixa.hidden = pendentes === 0;
   if (pendentes) {
-    faixa.textContent =
-      `🖨 ${plural(pendentes, "comanda não saiu", "comandas não saíram")}` +
-      `${ultimoErro ? ` (${ultimoErro})` : ""} — toque pra tentar de novo`;
+    // Duas frases porque são dois problemas. Comanda que não saiu manda o
+    // funcionário atrás do papel; comanda despachada esperando o ACK já está
+    // na mão dele, e dizer "não saiu" o mandaria procurar o que ele já tem.
+    faixa.textContent = semPapel
+      ? `🖨 ${plural(semPapel, "comanda não saiu", "comandas não saíram")}` +
+        `${ultimoErro ? ` (${ultimoErro})` : ""} — toque pra tentar de novo`
+      : `🖨 ${plural(pendentes, "comanda saiu mas não", "comandas saíram mas não")}` +
+        ` foi confirmada no servidor — toque pra tentar de novo`;
   }
 
   $("btn-imprimir-fila").hidden = pendentes === 0;

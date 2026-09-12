@@ -54,6 +54,14 @@ const MAX_NA_FILA = 20;
 const IDADE_ATE_VIRAR_REIMPRESSAO_MS = 10 * 60 * 1000;
 
 /**
+ * Quantas vezes tentar o ACK de uma comanda que **já saiu no papel**.
+ *
+ * Só vale depois do despacho. Antes dele a tarefa nunca desiste: ali o papel
+ * não existe, e desistir seria perder a comanda. Ver o `trabalhar()`.
+ */
+const MAX_TENTATIVAS_ACK = 5;
+
+/**
  * Monta o serviço de impressão.
  *
  * @param {object} [dependencias]
@@ -61,7 +69,7 @@ const IDADE_ATE_VIRAR_REIMPRESSAO_MS = 10 * 60 * 1000;
  * @param {(pedido: object, opcoes: object) => string} [dependencias.formatar]
  * @param {(pedidoId: string) => Promise<void>} [dependencias.confirmar]
  * @param {Storage} [dependencias.deposito]
- * @param {(estado: {pendentes: number, ultimoErro: string|null}) => void} [dependencias.aoMudar]
+ * @param {(estado: {pendentes: number, semPapel: number, ultimoErro: string|null}) => void} [dependencias.aoMudar]
  */
 export function criarImpressora({
   transporte = rawbt,
@@ -75,7 +83,15 @@ export function criarImpressora({
   let ultimoErro = null;
 
   function anunciar() {
-    aoMudar({ pendentes: fila.length, ultimoErro });
+    // `semPapel` e não só o tamanho da fila: uma tarefa já despachada está
+    // esperando o ACK do servidor, e o papel dela está na mão do funcionário.
+    // A faixa precisa saber a diferença pra não anunciar comanda faltando
+    // quando o que falta é um POST.
+    aoMudar({
+      pendentes: fila.length,
+      semPapel: fila.filter((t) => !t.despachada).length,
+      ultimoErro,
+    });
   }
 
   function gravar() {
@@ -150,6 +166,22 @@ export function criarImpressora({
           tarefa.tentativas += 1;
           tarefa.erro = erro.message;
           ultimoErro = erro.message;
+
+          // O papel já saiu e o que falhou foi só avisar o servidor. Insistir
+          // pra sempre deixava a faixa dizendo "comanda não saiu" sobre uma
+          // comanda que está na mão do funcionário — e um aviso que mente é um
+          // aviso que ele aprende a ignorar, inclusive quando for verdade.
+          //
+          // Desistir custa pouco: `impresso_em` vazio só faz o agente do PC
+          // reimprimir, e não há agente de PC ligado. A alternativa — a fila
+          // travada na primeira tarefa — segura as comandas seguintes, que
+          // ainda nem foram despachadas.
+          if (tarefa.despachada && tarefa.tentativas >= MAX_TENTATIVAS_ACK) {
+            fila = fila.filter((t) => t !== tarefa);
+            ultimoErro = null;
+            continue;
+          }
+
           // Para na primeira que falhar: o motivo (sem RawBT, app em segundo
           // plano, servidor fora) vale pra todas, e insistir nas seguintes só
           // gastaria tempo e embaralharia a ordem das comandas.
@@ -184,9 +216,14 @@ export function criarImpressora({
       if (fila.length) await trabalhar();
     },
 
-    /** Quantas comandas ainda não foram despachadas. */
+    /** Quantas comandas ainda não saíram do aparelho — despachadas ou não. */
     pendentes() {
       return fila.length;
+    },
+
+    /** Destas, quantas ainda não chegaram na impressora. Ver `anunciar`. */
+    semPapel() {
+      return fila.filter((t) => !t.despachada).length;
     },
 
     /** Este aparelho consegue falar com a impressora? */

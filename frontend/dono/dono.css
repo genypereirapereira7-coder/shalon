@@ -719,9 +719,48 @@
   opacity: 1;
 }
 
+/* Sorvete, trufado, sundae e kids sempre perguntam o sabor: o servidor recusa
+   desligar e o botão nasce `disabled`. Sem esta regra ele ficava idêntico a um
+   botão que funciona — opacidade cheia, cursor de mão — e o único aviso era um
+   `title`, que num celular ninguém vê. O dono tocava e não acontecia nada.
+
+   O cadeado diz o que o toque não vai fazer, antes do toque. */
+.linha__sabor:disabled {
+  cursor: default;
+  opacity: 1;
+}
+
+.linha__sabor:disabled::after {
+  content: "🔒";
+  font-size: 0.7em;
+  margin-left: 2px;
+  vertical-align: super;
+}
+
 /* O botão do sabor cresce quando carrega o nome do extra ("🍦+Chocolate").
    Sem isto ele fica com a largura de um emoji e o texto vaza. */
 .linha__sabor {
   font-size: 0.95rem;
   white-space: nowrap;
+}
+
+/* Toque registrado, servidor ainda respondendo.
+
+   Sem isto o toque no 🍦 ou no 👁 não dizia nada até o PATCH voltar: numa rede
+   ruim é um segundo de tela parada, o dono conclui que não pegou e toca de
+   novo. Apagar o botão na hora é a resposta que o dedo esperava.
+
+   Depois do `:disabled` no arquivo de propósito: as duas regras têm a mesma
+   especificidade, e é a de baixo que vale. Sem isso o cadeado do travado
+   apareceria em cima de um botão que está só ocupado — dizendo "não dá pra
+   mexer" onde a verdade é "já vai". */
+.linha__sabor[data-ocupado],
+.linha__ativo[data-ocupado] {
+  opacity: 0.45;
+  cursor: progress;
+}
+
+.linha__sabor[data-ocupado]::after {
+  content: "…";
+  vertical-align: baseline;
 }

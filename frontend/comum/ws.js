@@ -108,6 +108,13 @@ export function conectar({ aoEvento, aoMudarConexao }) {
         await api.renovarSessao();
       }
 
+      // Este `await` é uma janela: o `limpar()` acima já zerou o `socket`, e
+      // durante a renovação o `aoVoltar` (visibilitychange/online) vê o campo
+      // nulo, entende "não há conexão" e abre uma. Reagendar cegamente aqui
+      // abriria a segunda — dois sockets vivos, cada evento chegando duas
+      // vezes, cada comanda apitando em dobro na cozinha.
+      if (socket) return;
+
       reagendar();
     };
 

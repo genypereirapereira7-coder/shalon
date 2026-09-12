@@ -12,7 +12,7 @@
  * antigo e evita o PWA congelado numa versão de duas semanas atrás.
  */
 
-const VERSAO = "v12";
+const VERSAO = "v14";
 const CACHE = `shalon-vendas-${VERSAO}`;
 
 const CASCA = [
@@ -34,8 +34,13 @@ const CASCA = [
 ];
 
 // Tudo que é servidor, não app. Nunca sai do cache.
+// Faltar um caminho aqui não dá erro nenhum: a rota cai no ramo de baixo, que
+// responde do cache e revalida por trás — e o app passa a ler sempre o valor
+// *anterior*. Foi o que aconteceu com `/sabores` e `/usuarios`: o dono trocava
+// o sabor da máquina, o WebSocket acertava o balcão na hora, e a sincronia de
+// 60s trazia o sabor de ontem do cache por cima. Rota nova da API entra aqui.
 const CAMINHOS_API = [
-  "/auth", "/cardapio", "/produtos", "/pedidos",
+  "/auth", "/cardapio", "/produtos", "/pedidos", "/sabores", "/usuarios",
   "/relatorios", "/fechamento", "/health", "/ws",
 ];
 
