@@ -262,6 +262,20 @@ escolha `shalon`. Depois, dentro do projeto, *New → Database → Add PostgreSQ
 | `SHALON_DATABASE_URL` | `${{Postgres.DATABASE_URL}}` — referência, não copie a string |
 | `SHALON_JWT_SEGREDO` | gere com o comando abaixo |
 | `SHALON_AMBIENTE` | `prod` |
+| `SHALON_SENHA_DONO` | a senha com que você vai entrar no `/dono/` |
+
+Esquecer `SHALON_JWT_SEGREDO` não derruba o deploy: o app sorteia um segredo no
+arranque e grita no log, e ninguém é deslogado por isso (o refresh token mora no
+banco e não é JWT). Mas o segredo muda a cada reinício, então defina o seu.
+
+`SHALON_AMBIENTE` também é detectado sozinho — o `config.py` reconhece as
+variáveis que o Railway e o Render injetam —, e continua valendo a pena definir
+pra que a intenção esteja escrita.
+
+`SHALON_SENHA_DONO` vazia faz o seed sortear uma senha e imprimi-la **uma única
+vez** no log do deploy. Definida, ela vale — inclusive pra trocar a senha de uma
+conta que já existe, que é como se conserta uma senha vazada. Trocar a senha
+não desloga ninguém.
 
 ```bash
 python -c "import secrets; print(secrets.token_urlsafe(48))"
@@ -381,7 +395,16 @@ Criados pelo `python -m app.seed`:
 | Usuário | Segredo | Papel |
 | --- | --- | --- |
 | `adriano` | `adriano212121` | DONO |
-| Agente de impressão | `0000` | AGENTE |
+
+Essa senha vem do `dev.py`, que define `SHALON_SENHA_DONO` pra você — **não está
+no código do servidor**. Rodando o seed na mão, sem a variável, ele sorteia uma
+senha e a imprime uma única vez; é o mesmo caminho de produção.
+
+A conta **Agente de impressão** não nasce mais. Ela nascia sempre, ativa, com PIN
+`0000` fixo — e o `/auth/login` não filtra papel, então era uma porta conhecida
+pra lista de pedidos do dia. Hoje a comanda sai no celular pelo RawBT e ninguém
+usa essa conta; se você for ligar o agente numa térmica de PC, defina
+`SHALON_SENHA_AGENTE` e ela volta.
 
 Funcionário não nasce pelo seed: abra `/vendas/`, toque em **Criar minha
 conta** e cadastre nome + senha de 6 números. A conta fica **esperando
@@ -443,7 +466,8 @@ Tudo por variável de ambiente com prefixo `SHALON_`; os padrões estão em
 | `SHALON_AMBIENTE` | `dev` | em `prod` o `/docs` some |
 | `SHALON_FUSO` | `America/Sao_Paulo` | fuso do dia operacional |
 | `SHALON_HORA_VIRADA_DIA` | `4` | hora em que o dia operacional vira |
-| `SHALON_SENHA_DONO` | `adriano212121` | usada só pelo seed inicial |
+| `SHALON_SENHA_DONO` | vazio (sorteia e loga) | senha do dono; troca a de quem já existe |
+| `SHALON_SENHA_AGENTE` | vazio (não cria a conta) | conta de máquina do agente de PC |
 
 O fuso é explícito de propósito: a VPS roda em UTC e a virada das 4h sairia
 errada se dependesse do relógio do sistema.

@@ -177,3 +177,105 @@ async def test_trufado_pede_so_a_borda(semeado):
     # Incluídas no preço: a borda é o que faz o item ser trufado, não é extra.
     assert [o.nome for o in bordas] == ["Creme de avelã", "Amendoim", "Chocoball", "Ovomaltine"]
     assert all(o.preco_extra_centavos == 0 for o in bordas)
+
+
+# ------------------------------------------------------------ contas do seed
+#
+# As duas senhas escritas no código eram conhecidas por quem lesse o
+# repositório, e a tela de login está num endereço público. O que estes testes
+# travam é que nenhuma delas volte por descuido.
+
+async def test_conta_do_dono_nasce_com_a_senha_configurada(semeado):
+    from app.models import Usuario
+    from app.seguranca import conferir_hash
+
+    async with semeado() as sessao:
+        dono = (
+            await sessao.execute(select(Usuario).where(Usuario.nome == seed.NOME_DONO))
+        ).scalar_one()
+
+    assert dono.papel.value == "DONO"
+    assert dono.ativo
+    # A senha de teste vem do `conftest`, pela variável de ambiente.
+    assert not conferir_hash("adriano212121", dono.pin_hash), (
+        "a senha que estava no repositório não pode continuar valendo"
+    )
+
+
+async def test_agente_nao_nasce_sem_senha_configurada(semeado):
+    """A conta de máquina nascia sempre, ativa, com PIN "0000" — e o
+    `/auth/login` não filtra papel, então qualquer um entrava com ela."""
+    from app.models import Usuario
+
+    async with semeado() as sessao:
+        agente = (
+            await sessao.execute(select(Usuario).where(Usuario.nome == seed.NOME_AGENTE))
+        ).scalar_one_or_none()
+
+    assert agente is None
+
+
+async def test_agente_que_ja_existe_e_desativado(engine, monkeypatch):
+    """Instalação antiga: a conta já está no banco com o PIN conhecido. O seed
+    tem que fechar essa porta, e sem apagar o histórico de quem imprimiu."""
+    from app.models import Papel, Usuario
+    from app.models.base import agora
+    from app.seguranca import gerar_hash
+
+    fabrica = async_sessionmaker(engine, expire_on_commit=False)
+    monkeypatch.setattr(seed, "Sessao", fabrica)
+
+    async with fabrica() as sessao:
+        sessao.add(
+            Usuario(
+                nome=seed.NOME_AGENTE,
+                pin_hash=gerar_hash("0000"),
+                papel=Papel.AGENTE,
+                ativo=True,
+                aprovado_em=agora(),
+            )
+        )
+        await sessao.commit()
+
+    await seed.semear(detalhado=False)
+
+    async with fabrica() as sessao:
+        agente = (
+            await sessao.execute(select(Usuario).where(Usuario.nome == seed.NOME_AGENTE))
+        ).scalar_one()
+
+    assert agente.id is not None, "desativa, não apaga: o histórico aponta pra ela"
+    assert not agente.ativo
+
+
+async def test_senha_do_dono_configurada_troca_a_de_quem_ja_existe(engine, monkeypatch):
+    """O único jeito de consertar uma senha vazada sem abrir o banco na mão —
+    não há tela que troque a senha do dono."""
+    from app.models import Papel, Usuario
+    from app.models.base import agora
+    from app.seguranca import conferir_hash, gerar_hash
+
+    fabrica = async_sessionmaker(engine, expire_on_commit=False)
+    monkeypatch.setattr(seed, "Sessao", fabrica)
+
+    async with fabrica() as sessao:
+        sessao.add(
+            Usuario(
+                nome=seed.NOME_DONO,
+                pin_hash=gerar_hash("a-senha-velha-vazada"),
+                papel=Papel.DONO,
+                aprovado_em=agora(),
+            )
+        )
+        await sessao.commit()
+
+    monkeypatch.setattr(seed.cfg, "senha_dono", "uma-senha-nova-de-verdade")
+    await seed.semear(detalhado=False)
+
+    async with fabrica() as sessao:
+        dono = (
+            await sessao.execute(select(Usuario).where(Usuario.nome == seed.NOME_DONO))
+        ).scalar_one()
+
+    assert conferir_hash("uma-senha-nova-de-verdade", dono.pin_hash)
+    assert not conferir_hash("a-senha-velha-vazada", dono.pin_hash)

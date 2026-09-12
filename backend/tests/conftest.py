@@ -9,6 +9,10 @@ import os
 os.environ.setdefault("SHALON_DATABASE_URL", "sqlite+aiosqlite:///:memory:")
 os.environ.setdefault("SHALON_JWT_SEGREDO", "segredo-de-teste-com-mais-de-32-bytes-pra-hmac-sha256")
 os.environ.setdefault("SHALON_AMBIENTE", "teste")
+# O `config.py` não tem mais senha padrão: sem isto o seed sortearia uma a
+# cada execução e o teste não teria como conferir nada. `SHALON_SENHA_AGENTE`
+# fica de fora de propósito — o padrão que se quer testar é a conta não nascer.
+os.environ.setdefault("SHALON_SENHA_DONO", "senha-de-teste-do-dono")
 
 import pytest_asyncio  # noqa: E402
 from httpx import ASGITransport, AsyncClient  # noqa: E402

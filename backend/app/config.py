@@ -1,11 +1,28 @@
 """Configuração via variáveis de ambiente (prefixo SHALON_)."""
 
+import logging
+import os
+import secrets
 from functools import lru_cache
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 from zoneinfo import ZoneInfo
 
 from pydantic import AliasChoices, Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+log = logging.getLogger("shalon")
+
+# O valor que está neste arquivo, e portanto no repositório. Serve pra dev e pra
+# mais nada: em produção ele é trocado por um sorteado no arranque.
+JWT_SEGREDO_DEV = "dev-inseguro-troque-em-producao"
+
+# Variáveis que só existem dentro de uma hospedagem gerenciada. Se uma delas
+# está no ambiente, isto aqui não é a máquina de ninguém — é o servidor que
+# atende a loja, mesmo que ninguém tenha lembrado de definir `SHALON_AMBIENTE`.
+#
+# Existe porque esquecer essa variável não quebrava nada visível: o `/docs`
+# ficava aberto pra internet e o HSTS não saía, os dois em silêncio.
+_MARCAS_DE_HOSPEDAGEM = ("RAILWAY_ENVIRONMENT", "RAILWAY_PROJECT_ID", "RENDER", "FLY_APP_NAME")
 
 # O que o `sslmode` do libpq quer dizer pro asyncpg, que usa outro nome e outro
 # vocabulário. "disable" fica de fora de propósito: não vira parâmetro nenhum,
@@ -42,7 +59,7 @@ class Config(BaseSettings):
     )
 
     # Autenticação
-    jwt_segredo: str = "dev-inseguro-troque-em-producao"
+    jwt_segredo: str = JWT_SEGREDO_DEV
     jwt_algoritmo: str = "HS256"
     acesso_expira_min: int = 30          # token curto, renovado pelo refresh
 
@@ -110,10 +127,27 @@ class Config(BaseSettings):
     # Onde ficam os PWAs; em dev o próprio FastAPI serve os arquivos.
     dir_frontend: str = "../frontend"
 
-    # Só o dono nasce pelo seed. Fica aqui como padrão pra que a loja funcione
-    # sem ninguém decorar variável de ambiente — e continua sendo variável pra
-    # que trocar a senha não exija editar código.
-    senha_dono: str = "adriano212121"
+    # A senha do dono, usada pelo seed. **Sem padrão de propósito.**
+    #
+    # Ela tinha um, escrito neste arquivo — e este arquivo está num repositório
+    # público. Quem lesse o código sabia a senha do dono de qualquer instalação
+    # que não tivesse trocado, e a tela de login está num endereço aberto.
+    #
+    # Vazia, o seed sorteia uma na primeira semeadura e a imprime uma única vez
+    # no log do deploy; definida, o seed passa a usá-la — inclusive pra trocar a
+    # de uma conta que já existe, que é o único jeito de consertar uma senha
+    # vazada sem mexer no banco na mão. O `dev.py` define uma fixa pra rodar
+    # local sem ninguém decorar nada.
+    senha_dono: str = ""
+
+    # A conta de máquina do agente de impressão em PC. **Sem padrão também.**
+    #
+    # Ela nascia com PIN "0000" em toda instalação, ativa, e o `/auth/login` não
+    # filtra papel — então era uma conta conhecida por qualquer um que lesse o
+    # código, com acesso à lista de pedidos do dia inteiro. Hoje o papel sai no
+    # celular do balcão pelo RawBT e essa conta não é usada por ninguém: sem
+    # esta variável ela não é criada, e se já existir o seed a desativa.
+    senha_agente: str = ""
 
     @field_validator("database_url")
     @classmethod
@@ -170,9 +204,43 @@ class Config(BaseSettings):
 
     @property
     def producao(self) -> bool:
-        return self.ambiente.lower() in {"prod", "producao", "production"}
+        if self.ambiente.lower() in {"prod", "producao", "production"}:
+            return True
+        # Ninguém definiu `SHALON_AMBIENTE`, mas estamos num serviço gerenciado.
+        # Ver `_MARCAS_DE_HOSPEDAGEM`: o custo de errar pra cá é o `/docs` sumir
+        # de uma máquina de desenvolvimento; pra lá, é o `/docs` da loja aberto
+        # pra internet.
+        return any(os.environ.get(marca) for marca in _MARCAS_DE_HOSPEDAGEM)
 
 
 @lru_cache
 def get_config() -> Config:
-    return Config()
+    cfg = Config()
+
+    if cfg.producao and cfg.jwt_segredo == JWT_SEGREDO_DEV:
+        # **Não derruba o arranque.** Um serviço que se recusa a subir por causa
+        # de uma variável esquecida é a loja fechada num sábado — e o conserto
+        # aqui é barato: um segredo sorteado agora vale tanto quanto um do
+        # painel, e ninguém é deslogado por causa dele. O refresh token mora no
+        # banco como hash e não é JWT (`seguranca.py`), então o celular do
+        # balcão toma um 401, renova sozinho pelo `api.js` e segue vendendo.
+        #
+        # O que se perde sem a variável no painel: a cada reinício o segredo é
+        # outro, e todo aparelho faz uma renovação a mais. É de graça, mas é
+        # sinal de que falta configurar.
+        cfg.jwt_segredo = secrets.token_urlsafe(48)
+        log.error(
+            "\n"
+            "  ============================================================\n"
+            "   SHALON_JWT_SEGREDO NAO ESTA DEFINIDO\n"
+            "  ============================================================\n"
+            "   O padrao do codigo esta publicado no repositorio: com ele,\n"
+            "   qualquer pessoa assina um token de DONO e le o faturamento.\n"
+            "\n"
+            "   Subi com um segredo sorteado agora, so pra esta execucao.\n"
+            "   Ninguem foi deslogado, mas defina a variavel no painel:\n"
+            "       python -c \"import secrets; print(secrets.token_urlsafe(48))\"\n"
+            "  ============================================================\n"
+        )
+
+    return cfg

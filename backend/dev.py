@@ -37,6 +37,12 @@ PADROES = {
     "SHALON_DATABASE_URL": f"sqlite+aiosqlite:///{BANCO.as_posix()}",
     "SHALON_JWT_SEGREDO": "dev-local-inseguro-nao-use-em-producao-32bytes",
     "SHALON_AMBIENTE": "dev",
+    # O `config.py` não tem mais senha padrão — a que estava lá era conhecida
+    # por quem lesse o repositório. Aqui ela volta, porque aqui é a máquina de
+    # quem está desenvolvendo: sem isto, cada `dev.py` sortearia uma senha nova
+    # e o login local viraria uma caça ao log. Este valor não sai deste arquivo,
+    # e produção lê a variável do painel.
+    "SHALON_SENHA_DONO": "adriano212121",
 }
 for chave, valor in PADROES.items():
     # `setdefault`: quem já exportou a variável (pra apontar pro Postgres do

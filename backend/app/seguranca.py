@@ -5,6 +5,7 @@ import secrets
 import time
 import uuid
 from dataclasses import dataclass, field
+from typing import ClassVar
 from datetime import UTC, datetime, timedelta
 
 import bcrypt
@@ -112,6 +113,11 @@ class TravaLogin:
     Em memória de propósito: a v1 roda com um worker só (seção 9).
     """
 
+    # Acima disto o `_expurgar` limpa o que já não bloqueia. Folgado pra uma
+    # loja: são poucos aparelhos e poucos nomes, e este número só é alcançado
+    # quando alguém está varrendo.
+    MAX_CHAVES: ClassVar[int] = 2048
+
     max_tentativas: int = cfg.login_max_tentativas
     bloqueio_seg: int = cfg.login_bloqueio_seg
     _por_chave: dict[str, _Tentativas] = field(default_factory=dict)
@@ -124,6 +130,7 @@ class TravaLogin:
         return int(restante) + 1 if restante > 0 else 0
 
     def registrar_falha(self, chave: str) -> None:
+        self._expurgar()
         registro = self._por_chave.setdefault(chave, _Tentativas())
         registro.contagem += 1
         if registro.contagem >= self.max_tentativas:
@@ -132,6 +139,28 @@ class TravaLogin:
 
     def limpar(self, chave: str) -> None:
         self._por_chave.pop(chave, None)
+
+    def _expurgar(self) -> None:
+        """Joga fora o que já não bloqueia ninguém.
+
+        A chave é `IP:nome`, e quem escolhe as duas metades é quem tenta entrar:
+        sem expurgo, uma varredura de nomes deixava um registro por tentativa,
+        pra sempre, num processo que fica meses de pé. Não é uma invasão — é o
+        processo engordando até alguém reiniciar sem saber por quê.
+
+        Roda só quando uma falha é registrada, e só passando do teto: em uso
+        normal são meia dúzia de chaves e isto nunca acontece. O que sobrevive
+        ao expurgo é exatamente quem está bloqueado agora — perder a contagem
+        parcial de quem errou uma vez há uma hora não custa nada.
+        """
+        if len(self._por_chave) <= self.MAX_CHAVES:
+            return
+        agora_mono = time.monotonic()
+        self._por_chave = {
+            chave: registro
+            for chave, registro in self._por_chave.items()
+            if registro.bloqueado_ate > agora_mono
+        }
 
 
 trava_login = TravaLogin()

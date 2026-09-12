@@ -21,6 +21,7 @@ produto↔grupo — por isso a mesma lista vale 3 no sundae e 4 no açaí.
 """
 
 import asyncio
+import secrets
 
 from sqlalchemy import select
 
@@ -30,13 +31,13 @@ from app.models.base import agora
 from app.models.cardapio import CATEGORIAS_SABOR_OBRIGATORIO, Categoria, Produto
 from app.models.opcoes import Opcao, OpcaoGrupo, ProdutoOpcaoGrupo
 from app.models.usuario import Papel, Usuario
-from app.seguranca import gerar_hash
+from app.seguranca import conferir_hash, gerar_hash
 
 cfg = get_config()
 
-# (nome, segredo, papel). O nome é o que se digita no login — sem lista, sem
-# escolher de quem é o botão.
-#
+NOME_DONO = "Adriano"
+NOME_AGENTE = "Agente de impressão"
+
 # Sem conta de cozinha: a tela do PC saiu do sistema, e quem imprime a comanda
 # agora é o próprio celular que vendeu, pelo RawBT. Criar uma conta com PIN
 # 0000 que nenhuma tela usa é porta aberta sem porteiro.
@@ -45,12 +46,12 @@ cfg = get_config()
 # "Criar minha conta" na tela de vendas (`POST /auth/cadastro`). Nascer com
 # uma "Vanusa" de PIN padrão era conta de ninguém, com senha que todo mundo
 # que lê o código conhece.
-USUARIOS = [
-    ("Adriano", cfg.senha_dono, Papel.DONO),
-    # Conta de máquina: não entra por tela nenhuma, e o agente de PC só é usado
-    # por quem preferir a térmica presa a um computador.
-    ("Agente de impressão", "0000", Papel.AGENTE),
-]
+#
+# E, pela mesma regra, **sem senha escrita aqui**. A do dono tinha padrão neste
+# repositório e a do agente era "0000" fixo — as duas conhecidas por quem lesse
+# o código, as duas aceitas pela tela de login, que está num endereço público.
+# Agora as duas vêm de variável de ambiente, e o que falta não é inventado: o
+# dono ganha uma sorteada e impressa no log, o agente simplesmente não nasce.
 
 # ---------------------------------------------------------------- opções
 #
@@ -276,6 +277,108 @@ CARDAPIO = [
 ]
 
 
+async def _por_nome(sessao, nome: str) -> Usuario | None:
+    return (
+        await sessao.execute(select(Usuario).where(Usuario.nome == nome))
+    ).scalar_one_or_none()
+
+
+async def _semear_dono(sessao, criados: list[str], ajustados: list[str]) -> None:
+    """A conta do dono: cria na primeira vez, e troca a senha quando mandarem.
+
+    Trocar a senha de uma conta que já existe é o único ponto em que o seed
+    mexe em algo que já estava lá — e é de propósito. A senha antiga estava
+    escrita no repositório: sem este caminho, consertar isso numa loja que já
+    roda exigiria abrir o banco na mão, porque não há tela que troque a senha
+    do dono. Definir `SHALON_SENHA_DONO` e reimplantar passa a ser o conserto.
+
+    Só troca quando a variável existe e a senha é de fato outra: sem isso, um
+    seed a cada deploy reescreveria a senha do dono toda vez, e um `bcrypt` por
+    arranque a troco de nada.
+
+    As sessões abertas continuam abertas. Quem está com o celular na mão não é
+    deslogado por uma troca de senha — o refresh token vive no banco por si e
+    não depende dela. Se a intenção for cortar acesso, é a tela de sessões que
+    faz isso, e ela existe (`/auth/sessoes`).
+    """
+    dono = await _por_nome(sessao, NOME_DONO)
+
+    if dono is None:
+        # Vazia na primeira semeadura: melhor uma senha que só existe no log
+        # deste deploy do que uma que existe no GitHub.
+        segredo = cfg.senha_dono or secrets.token_urlsafe(9)
+        sessao.add(
+            Usuario(
+                nome=NOME_DONO,
+                pin_hash=gerar_hash(segredo),
+                papel=Papel.DONO,
+                # `aprovado_em` preenchido: o dono é quem libera os outros, não
+                # faria sentido esperar a si mesmo.
+                aprovado_em=agora(),
+            )
+        )
+        criados.append(f"usuário {NOME_DONO} ({Papel.DONO.value})")
+        if not cfg.senha_dono:
+            print(
+                "\n  ============================================================\n"
+                f"   SENHA DO DONO (usuario: {NOME_DONO})\n"
+                f"       {segredo}\n"
+                "   Anote agora: ela nao aparece de novo. Pra escolher a sua,\n"
+                "   defina SHALON_SENHA_DONO e implante outra vez.\n"
+                "  ============================================================\n",
+                flush=True,
+            )
+        return
+
+    if cfg.senha_dono and not conferir_hash(cfg.senha_dono, dono.pin_hash):
+        dono.pin_hash = gerar_hash(cfg.senha_dono)
+        ajustados.append(f"senha de {NOME_DONO}")
+
+
+async def _semear_agente(sessao, criados: list[str], ajustados: list[str]) -> None:
+    """A conta de máquina do agente de impressão em PC.
+
+    Só existe se alguém pedir. Ela nascia sempre, ativa, com PIN "0000" escrito
+    no código — e o `/auth/login` não filtra papel, então qualquer pessoa que
+    lesse o repositório entrava com ela e lia os pedidos do dia inteiro. Hoje a
+    comanda sai no celular do balcão pelo RawBT e essa conta não serve a
+    ninguém, então o padrão passa a ser não existir.
+
+    Quem já tem o agente rodando define `SHALON_SENHA_AGENTE` e nada muda de
+    lugar. Quem não tem — o caso de todo mundo — ganha a conta desativada no
+    próximo deploy. Desativar e não apagar porque `pedido.impresso_em` pode ter
+    sido marcado por ela: o histórico fica, o acesso não.
+    """
+    agente = await _por_nome(sessao, NOME_AGENTE)
+
+    if agente is None:
+        if not cfg.senha_agente:
+            return
+        sessao.add(
+            Usuario(
+                nome=NOME_AGENTE,
+                pin_hash=gerar_hash(cfg.senha_agente),
+                papel=Papel.AGENTE,
+                aprovado_em=agora(),
+            )
+        )
+        criados.append(f"usuário {NOME_AGENTE} ({Papel.AGENTE.value})")
+        return
+
+    if not cfg.senha_agente:
+        if agente.ativo:
+            agente.ativo = False
+            ajustados.append(f"{NOME_AGENTE} desativado (defina SHALON_SENHA_AGENTE pra usar)")
+        return
+
+    if not conferir_hash(cfg.senha_agente, agente.pin_hash):
+        agente.pin_hash = gerar_hash(cfg.senha_agente)
+        ajustados.append(f"senha de {NOME_AGENTE}")
+    if not agente.ativo:
+        agente.ativo = True
+        ajustados.append(f"{NOME_AGENTE} reativado")
+
+
 async def semear(detalhado: bool = True) -> None:
     """Popula usuários e cardápio. Idempotente.
 
@@ -290,24 +393,8 @@ async def semear(detalhado: bool = True) -> None:
         # só faria "3 registros criados" aparecer num banco onde nada nasceu.
         ajustados: list[str] = []
 
-        for nome, segredo, papel in USUARIOS:
-            existente = (
-                await sessao.execute(select(Usuario).where(Usuario.nome == nome))
-            ).scalar_one_or_none()
-            if existente is None:
-                # `aprovado_em` preenchido: conta que nasce aqui não passa
-                # pela fila de liberação do dono. O dono é quem libera os
-                # outros — não faria sentido esperar a si mesmo —, e a conta
-                # de máquina do agente não aparece em tela nenhuma.
-                sessao.add(
-                    Usuario(
-                        nome=nome,
-                        pin_hash=gerar_hash(segredo),
-                        papel=papel,
-                        aprovado_em=agora(),
-                    )
-                )
-                criados.append(f"usuário {nome} ({papel.value})")
+        await _semear_dono(sessao, criados, ajustados)
+        await _semear_agente(sessao, criados, ajustados)
 
         grupos = await _semear_grupos(sessao, criados, ajustados)
         await _semear_produtos(sessao, grupos, criados, ajustados)
@@ -342,8 +429,9 @@ async def semear(detalhado: bool = True) -> None:
         return
 
     print(
-        "\n  A senha do dono vem do config.py (SHALON_SENHA_DONO)."
-        "\n  Troque-a antes de expor o sistema fora da loja."
+        "\n  A senha do dono vem de SHALON_SENHA_DONO — o `dev.py` define uma"
+        "\n  fixa pra rodar local. Em produção, defina a sua no painel: sem ela"
+        "\n  o seed sorteia uma e a imprime uma única vez."
         "\n  Funcionário não nasce pelo seed — cria a própria conta pela tela de vendas."
     )
 
