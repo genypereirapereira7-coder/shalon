@@ -15,7 +15,7 @@ import fica no construtor pra não quebrar o agente em quem roda Linux.
 import logging
 
 from cupom import Cupom
-from impressoras.base import ErroImpressao
+from impressoras.base import ErroImpressao, texto_pra_termica
 
 log = logging.getLogger(__name__)
 
@@ -38,7 +38,7 @@ class SpoolerWindows:
         # cp850 cobre os acentos do português no modo texto da maioria das
         # impressoras. `replace` porque perder o cedilha é mil vezes melhor do
         # que não sair papel nenhum.
-        dados = cupom.texto.replace("…", "...").encode("cp850", errors="replace") + b"\n\n\n"
+        dados = texto_pra_termica(cupom).encode("cp850", errors="replace")
 
         try:
             alca = self._win32print.OpenPrinter(self._nome)

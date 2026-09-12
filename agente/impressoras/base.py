@@ -39,3 +39,22 @@ class Impressora(Protocol):
     def fechar(self) -> None:
         """Solta a porta/conexão. Chamado quando o agente encerra."""
         ...
+
+
+# Avanço final: linhas em branco pra comanda passar da serrilha.
+#
+# O `spooler_windows` já mandava as suas; as térmicas ESC/POS chamavam `cut()`
+# logo depois do texto, e numa impressora sem guilhotina — ou com a guilhotina
+# desligada no perfil — o cupom era rasgado em cima do TOTAL.
+AVANCO_FINAL = "\n\n\n"
+
+
+def texto_pra_termica(cupom: Cupom) -> str:
+    """O texto do cupom pronto pra sair no papel.
+
+    Troca o `…` do `_cortar` por três pontos: ele não existe na CP437/CP850 que
+    a térmica usa, e sai como um caractere qualquer no meio de um nome de
+    produto. O `spooler_windows` já fazia esta troca sozinho; as duas ESC/POS
+    não faziam, e a mesma comanda saía diferente conforme o cabo.
+    """
+    return cupom.texto.replace("…", "...") + AVANCO_FINAL

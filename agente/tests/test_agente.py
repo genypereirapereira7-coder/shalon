@@ -303,3 +303,25 @@ def test_url_do_ws_sai_do_mesmo_servidor():
 
     assert http.url_ws == "ws://127.0.0.1:8000/ws"
     assert https.url_ws == "wss://shalon.app.br/ws"
+
+
+# ------------------------------------------------------- texto pra térmica
+
+def test_reticencia_vira_tres_pontos():
+    """O `…` do `_cortar` não existe na CP437/CP850 e sai como lixo no meio de
+    um nome de produto. O `spooler_windows` já trocava; as duas ESC/POS não."""
+    from cupom import Cupom
+    from impressoras.base import texto_pra_termica
+
+    saida = texto_pra_termica(Cupom(numero=1, texto="Açaí com granola…", reimpressao=False))
+
+    assert "…" not in saida
+    assert "Açaí com granola..." in saida
+
+
+def test_avanca_papel_antes_do_corte():
+    """Sem o avanço, a térmica sem guilhotina é rasgada em cima do TOTAL."""
+    from cupom import Cupom
+    from impressoras.base import texto_pra_termica
+
+    assert texto_pra_termica(Cupom(numero=1, texto="TOTAL", reimpressao=False)).endswith("\n\n\n")

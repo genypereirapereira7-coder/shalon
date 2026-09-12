@@ -124,3 +124,93 @@ def test_largura_58mm_ainda_fecha():
 
     assert max(len(linha) for linha in texto.splitlines()) <= 32
     assert "R$ 34,00" in texto
+
+
+# ------------------------------------------------- paridade com o comanda.js
+#
+# Este arquivo e o `frontend/vendas/comanda.js` imprimem a mesma comanda, e a
+# única coisa que mantém os dois juntos é alguém lembrar. O sabor e os títulos
+# de grupo já ficaram só no lado do celular: quem imprimia pelo PC recebia o
+# papel sem saber qual bola vender. Os testes abaixo são o lembrete.
+
+def test_o_sabor_sai_no_papel():
+    """Sem isto a comanda do agente não diz qual bola vai na casquinha."""
+    texto = montar(
+        itens=[
+            {
+                "nome": "Casquinha",
+                "quantidade": 1,
+                "subtotal_centavos": 700,
+                "sabor": "Morango + Chocolate",
+                "opcoes": [],
+            }
+        ]
+    ).texto
+
+    assert "SABOR" in texto
+    assert "MORANGO + CHOCOLATE" in texto
+
+
+def test_item_sem_sabor_nao_ganha_bloco_vazio():
+    assert "SABOR" not in montar().texto
+
+
+def test_o_papel_distingue_a_bola_da_cobertura():
+    """A queixa que veio do balcão: num item com sabor *e* cobertura, os dois
+    saíam como nomes soltos e ninguém sabia qual "Chocolate" era qual."""
+    texto = montar(
+        itens=[
+            {
+                "nome": "Sundae",
+                "quantidade": 1,
+                "subtotal_centavos": 1500,
+                "sabor": "Creme",
+                "opcoes": [
+                    {"nome": "Chocolate", "grupo": "Coberturas", "preco_extra_centavos": 0},
+                    {"nome": "Granola", "grupo": "Acompanhamentos", "preco_extra_centavos": 0},
+                ],
+            }
+        ]
+    ).texto
+
+    assert "COBERTURAS" in texto
+    assert "ACOMPANHAMENTOS" in texto
+    # O título da cobertura vem antes do "Chocolate" que ele explica.
+    assert texto.index("COBERTURAS") < texto.index("- Chocolate")
+    # E o sabor vem antes de tudo: quem monta lê de cima pra baixo.
+    assert texto.index("SABOR") < texto.index("COBERTURAS")
+
+
+def test_grupo_repetido_nao_repete_o_titulo():
+    texto = montar(
+        itens=[
+            {
+                "nome": "Açaí 500ml",
+                "quantidade": 1,
+                "subtotal_centavos": 1800,
+                "opcoes": [
+                    {"nome": "Granola", "grupo": "Acompanhamentos", "preco_extra_centavos": 0},
+                    {"nome": "Paçoca", "grupo": "Acompanhamentos", "preco_extra_centavos": 0},
+                ],
+            }
+        ]
+    ).texto
+
+    assert texto.count("ACOMPANHAMENTOS") == 1
+
+
+def test_opcao_sem_grupo_continua_saindo():
+    """Pedido gravado antes de o `grupo_snapshot` existir. O papel perde o
+    título, não a linha — a comanda antiga não pode voltar vazia."""
+    texto = montar(
+        itens=[
+            {
+                "nome": "Açaí 500ml",
+                "quantidade": 1,
+                "subtotal_centavos": 1800,
+                "opcoes": [{"nome": "Granola", "preco_extra_centavos": 0}],
+            }
+        ]
+    ).texto
+
+    assert "- Granola" in texto

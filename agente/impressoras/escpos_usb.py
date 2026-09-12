@@ -13,7 +13,7 @@ Windows, o Gerenciador de Dispositivos → Detalhes → IDs de hardware
 import logging
 
 from cupom import Cupom
-from impressoras.base import ErroImpressao
+from impressoras.base import ErroImpressao, texto_pra_termica
 
 log = logging.getLogger(__name__)
 
@@ -48,7 +48,7 @@ class EscPosUSB:
     def imprimir(self, cupom: Cupom) -> None:
         try:
             porta = self._conectar()
-            porta.text(cupom.texto + "\n")
+            porta.text(texto_pra_termica(cupom))
             porta.cut()
         except Exception as erro:  # pragma: no cover - depende do hardware
             # Porta descartada: a próxima tentativa reabre. Uma térmica que caiu

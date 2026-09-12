@@ -61,7 +61,28 @@ def montar(pedido: dict, *, fuso: str, reimpressao: bool = False, largura: int =
 
     for item in pedido["itens"]:
         escrever(_linha_item(item, largura))
+
+        # Antes dos acompanhamentos: é o sabor que diz o que servir, e os
+        # acompanhamentos são o que vai por cima. Quem monta lê de cima pra
+        # baixo.
+        #
+        # Este bloco faltava aqui e existia no `comanda.js`, que é o porte deste
+        # arquivo. O papel saía sem o sabor quando quem imprimia era o PC — e
+        # comanda que sai diferente dependendo de quem imprimiu é comanda que
+        # ninguém confere.
+        if sabor := item.get("sabor"):
+            escrever(_titulo_de_bloco("SABOR", largura))
+            escrever(_linha_sabor(sabor, largura))
+
+        # Agrupado pelo nome do grupo, com um título por bloco. Sem os títulos,
+        # num item que tem sabor e cobertura o "Chocolate" aparecia sem dizer se
+        # era a bola ou o que ia por cima.
+        grupo_atual = None
         for opcao in item.get("opcoes") or []:
+            grupo = opcao.get("grupo")
+            if grupo and grupo != grupo_atual:
+                escrever(_titulo_de_bloco(grupo, largura))
+            grupo_atual = grupo
             escrever(_linha_opcao(opcao, largura))
 
     if pedido.get("observacao"):
@@ -85,6 +106,25 @@ def _linha_item(item: dict, largura: int) -> str:
     valor = _reais(item["subtotal_centavos"])
     espaco = max(largura - len(prefixo) - len(valor) - 1, 1)
     return f"{prefixo}{_cortar(item['nome'], espaco).ljust(espaco)} {valor}"
+
+
+def _titulo_de_bloco(nome: str, largura: int) -> str:
+    """Título de um bloco sob o item: `SABOR`, `COBERTURA`, `ACOMPANHAMENTOS`.
+
+    Gêmeo do `tituloDeBloco` do `frontend/vendas/comanda.js`. A queixa que veio
+    do balcão foi exatamente esta: no item que tem sabor *e* cobertura, os dois
+    saíam como nomes soltos e ninguém sabia qual era qual.
+    """
+    return _cortar(f"  {nome.upper()}", largura)
+
+
+def _linha_sabor(texto: str, largura: int) -> str:
+    """O sabor, indentado sob o título e em maiúsculas.
+
+    Maiúsculas porque numa térmica, com papel gasto e a cozinha lendo de
+    relance, é a linha que não pode ser confundida com um acompanhamento.
+    """
+    return _cortar(f"   * {texto.upper()}", largura)
 
 
 def _linha_opcao(opcao: dict, largura: int) -> str:

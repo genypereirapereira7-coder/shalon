@@ -8,7 +8,7 @@ e as comandas param de sair sem ninguém entender por quê.
 import logging
 
 from cupom import Cupom
-from impressoras.base import ErroImpressao
+from impressoras.base import ErroImpressao, texto_pra_termica
 
 log = logging.getLogger(__name__)
 
@@ -38,7 +38,7 @@ class EscPosRede:
     def imprimir(self, cupom: Cupom) -> None:
         try:
             conexao = self._conectar()
-            conexao.text(cupom.texto + "\n")
+            conexao.text(texto_pra_termica(cupom))
             conexao.cut()
         except Exception as erro:  # pragma: no cover - depende do hardware
             self.fechar()
