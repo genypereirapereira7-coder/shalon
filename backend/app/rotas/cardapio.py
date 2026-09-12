@@ -104,10 +104,25 @@ async def criar_categoria(dados: CategoriaEntrada, sessao: SessaoDep, _: SoDono)
 
 @rotas.post("/produtos", response_model=ProdutoSaida, status_code=status.HTTP_201_CREATED)
 async def criar_produto(dados: ProdutoEntrada, sessao: SessaoDep, _: SoDono):
-    if await sessao.get(Categoria, dados.categoria_id) is None:
+    categoria = await sessao.get(Categoria, dados.categoria_id)
+    if categoria is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Categoria não existe")
 
-    produto = Produto(**dados.model_dump())
+    campos = dados.model_dump()
+
+    # A mesma regra que o PATCH aplica, e pelo mesmo motivo. Faltando aqui, um
+    # produto criado em Sorvetes com `pede_sabor: false` (o padrão do schema)
+    # nascia num estado que a tela do dono não conserta: o 🍦 é desenhado
+    # travado pelo nome da categoria (`frontend/dono/app.js`), então ele
+    # aparecia desligado *e* sem como ligar, enquanto o balcão vendia bola sem
+    # perguntar o sabor.
+    #
+    # Corrigir em vez de recusar: o valor certo é conhecido — a categoria o diz
+    # — e um 422 aqui só faria quem usa a API adivinhar o campo.
+    if categoria.nome in CATEGORIAS_SABOR_OBRIGATORIO:
+        campos["pede_sabor"] = True
+
+    produto = Produto(**campos)
     sessao.add(produto)
     await sessao.flush()
     return ProdutoSaida.model_validate(produto)

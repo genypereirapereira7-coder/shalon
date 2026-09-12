@@ -65,20 +65,27 @@ async def criar(
     data = dia_operacional(entrada.criado_em_cliente)
     itens, total = await _montar_itens(sessao, entrada.itens, entrada.criado_em_cliente)
 
-    pedido = Pedido(
-        id_cliente=entrada.id_cliente,
-        numero_dia=await _proximo_numero(sessao, data),
-        data_operacional=data,
-        usuario=usuario,
-        total_centavos=total,
-        observacao=entrada.observacao,
-        criado_em_cliente=entrada.criado_em_cliente,
-        pos_fechamento=await _dia_ja_fechado(sessao, data),
-        itens=itens,
-    )
+    pos_fechamento = await _dia_ja_fechado(sessao, data)
 
     try:
+        # A numeração entra **dentro** do savepoint, junto do INSERT do pedido.
+        # Fora dele, o `ultimo_numero += 1` já estava gravado quando a
+        # `IntegrityError` chegava, e o rollback do savepoint desfazia o pedido
+        # mas não o contador: dois envios do mesmo `id_cliente` numa corrida
+        # queimavam um "Pedido #N" que nunca existiu, e a numeração do dia ficava
+        # com buraco. Quem confere o papel contra a fila conta os pulos.
         async with sessao.begin_nested():
+            pedido = Pedido(
+                id_cliente=entrada.id_cliente,
+                numero_dia=await _proximo_numero(sessao, data),
+                data_operacional=data,
+                usuario=usuario,
+                total_centavos=total,
+                observacao=entrada.observacao,
+                criado_em_cliente=entrada.criado_em_cliente,
+                pos_fechamento=pos_fechamento,
+                itens=itens,
+            )
             sessao.add(pedido)
             await sessao.flush()
     except IntegrityError:

@@ -95,3 +95,48 @@ async def test_preco_negativo_e_recusado(cliente, dados, entrar):
         f"/produtos/{dados['casquinha'].id}", json={"preco_centavos": -1}, headers=cabecalho
     )
     assert resposta.status_code == 422
+
+
+async def test_produto_novo_em_categoria_de_bola_ja_nasce_pedindo_sabor(cliente, dados, entrar):
+    """A regra existia só no PATCH, e o POST a furava.
+
+    Um produto criado em Sorvetes com o `pede_sabor: false` do schema ficava num
+    estado que a tela do dono não conserta: lá o 🍦 é desenhado travado pelo
+    nome da categoria, então ele aparecia desligado *e* sem como ligar — com o
+    balcão vendendo bola sem perguntar o sabor.
+    """
+    cabecalho = await entrar(dados["dono"].id, "senhaforte")
+    resposta = await cliente.post(
+        "/produtos",
+        json={
+            "categoria_id": dados["categoria"].id,  # "Sorvetes"
+            "nome": "Casquinha grande",
+            "preco_centavos": 900,
+        },
+        headers=cabecalho,
+    )
+
+    assert resposta.status_code == 201
+    assert resposta.json()["pede_sabor"] is True
+
+
+async def test_pede_sabor_explicito_nao_sobrescreve_fora_das_categorias(
+    cliente, dados, entrar, sessao
+):
+    """A correção acima vale só onde toda bola é obrigatória. Fora dali o
+    interruptor continua sendo do dono — a água mineral não pergunta sabor."""
+    from app.models import Categoria
+
+    bebidas = Categoria(nome="Bebidas", ordem=9)
+    sessao.add(bebidas)
+    await sessao.commit()
+
+    cabecalho = await entrar(dados["dono"].id, "senhaforte")
+    resposta = await cliente.post(
+        "/produtos",
+        json={"categoria_id": bebidas.id, "nome": "Água mineral", "preco_centavos": 400},
+        headers=cabecalho,
+    )
+
+    assert resposta.status_code == 201
+    assert resposta.json()["pede_sabor"] is False
