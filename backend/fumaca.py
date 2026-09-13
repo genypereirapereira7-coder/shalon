@@ -66,10 +66,29 @@ confere("espaço nas pontas some", sab["sabor2"] == "Creme", sab)
 print("\n#16 produto novo em categoria de bola já nasce pedindo sabor")
 s, cardapio, _ = chamar("GET", "/cardapio?incluir_inativos=true", token=acesso)
 sorvetes = next(c for c in cardapio["categorias"] if c["nome"] == "Sorvetes")
-s, novo_prod, _ = chamar("POST", "/produtos",
-    {"categoria_id": sorvetes["id"], "nome": "Casquinha de fumaça", "preco_centavos": 750}, acesso)
-confere("POST /produtos força pede_sabor em Sorvetes",
-        s == 201 and novo_prod["pede_sabor"] is True, f"HTTP {s} {novo_prod}")
+
+# Só cria se ainda não existe, e sai deixando o produto desativado.
+#
+# A primeira versão criava um produto a cada execução: depois de três rodadas o
+# cardápio tinha três "Casquinha de fumaça" e o balcão via as três. Teste que
+# suja o banco em que roda é teste que ninguém roda duas vezes — ou pior, que
+# alguém roda contra a loja de verdade sem pensar. Não há rota pra apagar
+# produto (de propósito: o histórico de vendas aponta pra ele), então o que dá
+# pra fazer é reaproveitar e desligar.
+NOME_COBAIA = "Casquinha de fumaça"
+cobaia = next((p for p in sorvetes["produtos"] if p["nome"] == NOME_COBAIA), None)
+
+if cobaia is None:
+    s, novo_prod, _ = chamar("POST", "/produtos",
+        {"categoria_id": sorvetes["id"], "nome": NOME_COBAIA, "preco_centavos": 750}, acesso)
+    confere("POST /produtos força pede_sabor em Sorvetes",
+            s == 201 and novo_prod["pede_sabor"] is True, f"HTTP {s} {novo_prod}")
+else:
+    confere("POST /produtos força pede_sabor em Sorvetes (produto da rodada anterior)",
+            cobaia["pede_sabor"] is True, cobaia)
+    novo_prod = cobaia
+
+chamar("PATCH", f"/produtos/{novo_prod['id']}", {"ativo": False}, acesso)
 
 s, antes, _ = chamar("GET", "/relatorios/hoje", token=acesso)
 base_qtd, base_total = antes["qtd_pedidos"], antes["total_centavos"]
