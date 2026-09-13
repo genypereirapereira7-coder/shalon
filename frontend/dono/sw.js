@@ -12,7 +12,7 @@
  * Ao mexer nos arquivos do app, suba o VERSAO.
  */
 
-const VERSAO = "v10";
+const VERSAO = "v11";
 const CACHE = `shalon-dono-${VERSAO}`;
 
 const CASCA = [

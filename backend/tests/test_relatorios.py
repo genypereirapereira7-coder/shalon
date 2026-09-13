@@ -349,3 +349,104 @@ async def test_historico_traz_o_mais_recente_primeiro(cliente, dados, sessao, do
 
     assert [f["total_centavos"] for f in historico] == [300, 200, 100]
     assert all(f["fechado_por_nome"] == "Dona Shalon" for f in historico)
+
+
+# --------------------------------------------------- fechamento automático
+
+async def test_fecha_sozinho_o_dia_que_passou_da_hora(cliente, sessao, dados, caixa, dono):
+    """O caso que a funcionalidade existe pra resolver: ninguém fechou, e à 1h
+    da manhã o caixa fecha sem que o dono precise estar acordado.
+
+    O dia vai cravado. Deixar o padrão (`dia_a_fechar()`) faria o teste passar
+    ou falhar conforme a hora em que a suíte roda: só entre a meia-noite e as
+    04h da loja é que o dia a fechar coincide com o dia da venda recém-criada.
+    Quem cobre a escolha do dia é o `test_dia_operacional`, com instantes
+    fixos.
+    """
+    from app.servicos.relatorios import fechar_automatico
+
+    await cliente.post("/pedidos", json=corpo((dados["casquinha"], 2)), headers=caixa)
+
+    fechado = await fechar_automatico(sessao, dia_atual())
+    await sessao.commit()
+
+    assert fechado is not None
+    assert fechado.data_operacional == dia_atual()
+    assert fechado.total_centavos == 1600
+    assert fechado.qtd_pedidos == 1
+    assert fechado.automatico is True
+
+
+async def test_o_historico_diz_que_foi_automatico(cliente, sessao, dados, caixa, dono):
+    """O dono precisa distinguir, olhando o histórico, o dia que ele fechou do
+    dia que fechou sozinho. Sem a marca, o automático apareceria assinado por
+    uma pessoa que estava dormindo."""
+    from app.servicos.relatorios import fechar_automatico
+
+    await cliente.post("/pedidos", json=corpo((dados["casquinha"], 1)), headers=caixa)
+    await fechar_automatico(sessao, dia_atual())
+    await sessao.commit()
+
+    resposta = await cliente.get("/fechamento", headers=dono)
+    assert resposta.status_code == 200
+    assert resposta.json()[0]["automatico"] is True
+
+
+async def test_fechar_a_mao_nao_vem_marcado_como_automatico(cliente, dados, caixa, dono):
+    """O contrário do teste acima: o botão do dono continua sendo dele."""
+    await cliente.post("/pedidos", json=corpo((dados["casquinha"], 1)), headers=caixa)
+    assert (await cliente.post("/fechamento", json={}, headers=dono)).status_code == 201
+
+    assert (await cliente.get("/fechamento", headers=dono)).json()[0]["automatico"] is False
+
+
+async def test_nao_refaz_o_dia_que_o_dono_ja_fechou(cliente, sessao, dados, caixa, dono):
+    """O dono fechou às 23h, conferindo a gaveta. O laço acorda à 1h e não pode
+    encostar naquele número — o fechamento é imutável de propósito."""
+    from app.servicos.relatorios import fechar_automatico
+
+    await cliente.post("/pedidos", json=corpo((dados["casquinha"], 1)), headers=caixa)
+    await cliente.post("/fechamento", json={}, headers=dono)
+
+    assert await fechar_automatico(sessao, dia_atual()) is None
+
+    fechamentos = (await cliente.get("/fechamento", headers=dono)).json()
+    assert len(fechamentos) == 1
+    assert fechamentos[0]["automatico"] is False
+
+
+async def test_dia_sem_venda_nao_vira_linha_no_historico(sessao, dados):
+    """Domingo em que a loja não abriu não ganha um R$ 0,00 no histórico: ele
+    não informa nada e ainda entraria na média das somas por semana e mês."""
+    from app.servicos.relatorios import fechar_automatico
+
+    assert await fechar_automatico(sessao, dia_atual()) is None
+
+
+async def test_chamar_duas_vezes_nao_duplica(cliente, sessao, dados, caixa, dono):
+    """O laço acorda a cada quinze minutos e passa por aqui toda vez. A segunda
+    passada do mesmo dia tem que ser inofensiva."""
+    from app.servicos.relatorios import fechar_automatico
+
+    await cliente.post("/pedidos", json=corpo((dados["casquinha"], 1)), headers=caixa)
+
+    assert await fechar_automatico(sessao, dia_atual()) is not None
+    await sessao.commit()
+    assert await fechar_automatico(sessao, dia_atual()) is None
+
+    assert len((await cliente.get("/fechamento", headers=dono)).json()) == 1
+
+
+async def test_sem_dono_ativo_nao_fecha_e_nao_explode(cliente, sessao, dados, caixa):
+    """Sem conta pra assinar, o caixa segue aberto — e o dono pode fechar à mão
+    depois. O que não pode é o laço morrer e a loja ficar sem fechamento
+    automático até o próximo deploy."""
+    from app.models.usuario import Papel, Usuario
+    from app.servicos.relatorios import fechar_automatico
+    from sqlalchemy import select, update
+
+    await cliente.post("/pedidos", json=corpo((dados["casquinha"], 1)), headers=caixa)
+    await sessao.execute(update(Usuario).where(Usuario.papel == Papel.DONO).values(ativo=False))
+    await sessao.commit()
+
+    assert await fechar_automatico(sessao, dia_atual()) is None

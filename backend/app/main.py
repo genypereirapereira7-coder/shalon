@@ -1,7 +1,9 @@
 """Aplicação FastAPI."""
 
+import asyncio
 import logging
-from contextlib import asynccontextmanager
+import sys
+from contextlib import asynccontextmanager, suppress
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -14,9 +16,27 @@ from sqlalchemy import text
 from app.config import get_config
 from app.db import engine
 from app.rotas import auth, cardapio, pedidos, relatorios, sabores, usuarios, ws
+from app.servicos import fechamento_automatico
 from app.servicos.dia_operacional import dia_atual
 
 log = logging.getLogger("shalon")
+
+# Sem isto o `log.info` deste app não sai em lugar nenhum.
+#
+# O Uvicorn configura os loggers dele e mais nenhum; um logger próprio sem
+# handler cai no `lastResort` do Python, que só emite WARNING pra cima. O
+# efeito era mudo e enganoso: os `log.error` apareciam (o do JWT, por exemplo),
+# então tudo parecia configurado — enquanto "caixa fechado automaticamente" e
+# "quem entrou no WebSocket" sumiam sem deixar rastro. Num serviço em que o log
+# do painel é a única janela pra dentro, isso é a diferença entre saber e supor.
+#
+# Handler próprio em vez de `basicConfig`: mexer no logger raiz mudaria o
+# comportamento de toda biblioteca de terceiro junto.
+if not log.handlers:
+    _saida = logging.StreamHandler(sys.stdout)
+    _saida.setFormatter(logging.Formatter("%(levelname)s:     %(message)s"))
+    log.addHandler(_saida)
+    log.setLevel(logging.INFO)
 
 cfg = get_config()
 
@@ -58,7 +78,21 @@ async def ciclo_de_vida(_: FastAPI):
             alvo,
             erro,
         )
-    yield
+
+    # O relógio do fechamento sobe depois do banco de propósito: a primeira
+    # coisa que ele faz é procurar um dia em aberto, e sem banco isso só geraria
+    # um traceback no arranque. Ele já se defende sozinho (ver `_tentar`), mas
+    # não há por que provocar.
+    tarefa = fechamento_automatico.agendar()
+    try:
+        yield
+    finally:
+        # Desligar limpo: sem isto o `asyncio.sleep` de quinze minutos segura o
+        # encerramento, e o Ctrl+C no terminal parece travado.
+        if tarefa is not None:
+            tarefa.cancel()
+            with suppress(asyncio.CancelledError):
+                await tarefa
 
 
 app = FastAPI(

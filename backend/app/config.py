@@ -78,6 +78,27 @@ class Config(BaseSettings):
     fuso: str = "America/Sao_Paulo"
     hora_virada_dia: int = 4
 
+    # Fechamento automático do caixa.
+    #
+    # A hora **precisa ser menor que a virada**. Às 04h em ponto o dia
+    # operacional já virou: fechar ali pegaria o dia novo, que acabou de
+    # começar e está vazio, e deixaria o movimento da véspera aberto pra
+    # sempre. Com a virada em 04h, o intervalo que funciona é 0h–3h, e 3h é o
+    # mais tarde possível — o mais perto do fim real do dia.
+    #
+    # Efeito de fechar antes da virada: uma venda entre a hora do fechamento e
+    # as 04h entra marcada como `pos_fechamento`. Ela continua somando no total
+    # ao vivo da tela "Hoje", mas o número congelado no fechamento não a inclui
+    # — e é o congelado que alimenta o histórico e as somas por semana, mês e
+    # ano. O dinheiro dessa venda fica de fora do histórico.
+    #
+    # Por que 1h mesmo assim: a Shalon não vende a essa hora — o dono confirmou
+    # quando escolheu o valor —, então a janela existe e nunca é usada. Se um
+    # dia a loja passar a atender de madrugada, `3` encurta a janela pra uma
+    # hora e `4` não serve (ver acima).
+    fechamento_automatico: bool = True
+    fechamento_automatico_hora: int = 1
+
     # Um pedido que ficou na fila offline por mais que isso é recusado:
     # provavelmente é celular com relógio errado, não venda atrasada.
     atraso_max_horas: int = 12
@@ -148,6 +169,24 @@ class Config(BaseSettings):
     # celular do balcão pelo RawBT e essa conta não é usada por ninguém: sem
     # esta variável ela não é criada, e se já existir o seed a desativa.
     senha_agente: str = ""
+
+    @field_validator("fechamento_automatico_hora")
+    @classmethod
+    def _hora_antes_da_virada(cls, valor: int, info) -> int:
+        """Hora do fechamento automático tem que cair dentro do dia que ela fecha.
+
+        Ver o comentário do campo: a partir da virada, `dia_atual()` já devolve
+        o dia seguinte, e o fechamento congelaria um dia vazio deixando o de
+        ontem aberto. Recusar aqui é melhor do que descobrir isso pelo
+        histórico com um R$ 0,00 no meio.
+        """
+        virada = info.data.get("hora_virada_dia", 4)
+        if not 0 <= valor < virada:
+            raise ValueError(
+                f"fechamento_automatico_hora deve estar entre 0 e {virada - 1} "
+                f"(a virada do dia é às {virada}h); recebi {valor}"
+            )
+        return valor
 
     @field_validator("database_url")
     @classmethod

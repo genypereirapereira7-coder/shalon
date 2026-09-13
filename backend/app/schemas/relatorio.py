@@ -35,6 +35,7 @@ class FechamentoSaida(BaseModel):
     fechado_em: Utc
     fechado_por: int
     fechado_por_nome: str
+    automatico: bool = False
 
     model_config = {"from_attributes": True}
 

@@ -13,6 +13,7 @@ por isso ela também aparece separada. Sem isso o dono compararia o relatório
 com o caixa e acharia que faltou dinheiro.
 """
 
+import logging
 from collections import defaultdict
 from datetime import date
 from typing import Callable
@@ -24,7 +25,7 @@ from sqlalchemy.sql.elements import ColumnElement
 from app.models.base import agora
 from app.models.fechamento import FechamentoDia
 from app.models.pedido import Pedido, PedidoItem, StatusPedido
-from app.models.usuario import Usuario
+from app.models.usuario import Papel, Usuario
 from app.schemas.relatorio import (
     FechamentoAgrupadoSaida,
     FechamentoSaida,
@@ -32,7 +33,9 @@ from app.schemas.relatorio import (
     ResumoDia,
     VendaPorAtendente,
 )
-from app.servicos.dia_operacional import dia_atual
+from app.servicos.dia_operacional import dia_a_fechar, dia_atual
+
+log = logging.getLogger("shalon")
 
 
 class FechamentoInvalido(Exception):
@@ -113,6 +116,7 @@ async def fechar(
     data: date,
     usuario_id: int,
     total_conferido: int | None = None,
+    automatico: bool = False,
 ) -> FechamentoSaida:
     """Congela o total do dia. Não faz commit.
 
@@ -143,12 +147,67 @@ async def fechar(
         total_centavos=total,
         qtd_pedidos=qtd,
         fechado_por=usuario_id,
+        automatico=automatico,
     )
     sessao.add(fechamento)
     await sessao.flush()
 
     usuario = await sessao.get(Usuario, usuario_id)
     return _saida_fechamento(fechamento, usuario.nome if usuario else "?")
+
+
+async def fechar_automatico(
+    sessao: AsyncSession, data: date | None = None
+) -> FechamentoSaida | None:
+    """Fecha o caixa do dia que já passou da hora, se ninguém fechou antes.
+
+    Devolve `None` quando não havia o que fazer — e isso é o caso comum, porque
+    quem chama é um laço que acorda de tempos em tempos. Não faz commit.
+
+    Três motivos pra não fazer nada, todos normais:
+
+    **Já está fechado.** O dono fechou à mão antes da hora, ou o laço já passou
+    por aqui. O fechamento é imutável e a data é única no banco; refazer
+    apagaria o número que ele conferiu contra a gaveta.
+
+    **A loja não abriu.** Dia sem venda nenhuma não vira linha no histórico. Um
+    R$ 0,00 gravado no domingo em que ninguém trabalhou não informa nada e
+    ainda entra na média das somas por semana e por mês.
+
+    **Não há dono ativo.** Sem conta pra assinar, não há fechamento — e isso é
+    um problema de verdade, então sai no log em vez de passar batido.
+
+    `data` existe pro teste poder cravar o dia. Em produção é sempre o padrão:
+    quem decide o alvo é o relógio, e passar a data na mão seria fechar um dia
+    escolhido por quem chama — que é o que o botão do dono já faz.
+    """
+    data = data or dia_a_fechar()
+
+    if await buscar_fechamento(sessao, data) is not None:
+        return None
+
+    qtd, _total = await _totais(sessao, *_vendas_do_dia(data))
+    if qtd == 0:
+        return None
+
+    dono = (
+        await sessao.execute(
+            select(Usuario)
+            .where(Usuario.papel == Papel.DONO, Usuario.ativo.is_(True))
+            .order_by(Usuario.id)
+            .limit(1)
+        )
+    ).scalar_one_or_none()
+
+    if dono is None:
+        log.error(
+            "Fechamento automático de %s não aconteceu: nenhuma conta de dono ativa "
+            "pra assinar. O caixa segue aberto e pode ser fechado à mão.",
+            data,
+        )
+        return None
+
+    return await fechar(sessao, data, dono.id, automatico=True)
 
 
 async def _historico_agrupado(
@@ -286,4 +345,5 @@ def _saida_fechamento(fechamento: FechamentoDia, nome: str) -> FechamentoSaida:
         fechado_em=fechamento.fechado_em,
         fechado_por=fechamento.fechado_por,
         fechado_por_nome=nome,
+        automatico=fechamento.automatico,
     )

@@ -468,6 +468,38 @@ Tudo por variável de ambiente com prefixo `SHALON_`; os padrões estão em
 | `SHALON_HORA_VIRADA_DIA` | `4` | hora em que o dia operacional vira |
 | `SHALON_SENHA_DONO` | vazio (sorteia e loga) | senha do dono; troca a de quem já existe |
 | `SHALON_SENHA_AGENTE` | vazio (não cria a conta) | conta de máquina do agente de PC |
+| `SHALON_FECHAMENTO_AUTOMATICO` | `true` | fecha o caixa sozinho na hora marcada |
+| `SHALON_FECHAMENTO_AUTOMATICO_HORA` | `1` | hora do fechamento automático |
 
 O fuso é explícito de propósito: a VPS roda em UTC e a virada das 4h sairia
 errada se dependesse do relógio do sistema.
+
+### O caixa que fecha sozinho
+
+À `SHALON_FECHAMENTO_AUTOMATICO_HORA` (1h da manhã, por padrão) o servidor
+congela o movimento do dia que acabou e grava no histórico, sem ninguém tocar
+em nada. O dia aparece na aba *Histórico* marcado com **⏰ fechou sozinho**,
+pra você distinguir dele os dias que você mesmo conferiu contra a gaveta.
+
+Três coisas que ele não faz, todas de propósito:
+
+- **Não refaz dia já fechado.** Se você fechou às 23h, o automático passa
+  direto — o fechamento é imutável e o número que você conferiu fica.
+- **Não grava dia sem venda.** Domingo em que a loja não abriu não vira uma
+  linha de R$ 0,00 no histórico.
+- **Não fica pra trás.** Se o servidor estava fora do ar à 1h (deploy,
+  reinício), ele fecha o dia pendente assim que voltar.
+
+**A hora precisa ser menor que a virada do dia** — com a virada padrão em 4h,
+o intervalo válido é 0h–3h, e o app recusa subir com um valor fora disso. Às
+04h em ponto o dia operacional já virou: fechar ali congelaria o dia novo,
+vazio, e deixaria o movimento da véspera aberto pra sempre.
+
+Efeito colateral de fechar antes da virada: uma venda entre a hora do
+fechamento e as 4h entra marcada como **pós-fechamento**. Ela continua somando
+no total que você vê na tela *Hoje*, mas **não entra no número congelado** — e
+é o congelado que vai pro histórico e pras somas por semana, mês e ano. Na
+prática, esse dinheiro fica de fora do histórico.
+
+Se a loja não vende depois da 1h, isso nunca acontece. Se vender, use `3`: é o
+mais perto do fim real do dia, e reduz a janela pra uma hora.

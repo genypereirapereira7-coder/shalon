@@ -879,10 +879,18 @@ function desenharHistorico() {
   for (const fechamento of estado.historico) {
     const li = document.createElement("li");
     const botao = document.createElement("button");
+    // Quem fechou: o nome de quem tocou no botão, ou a marca de que o caixa
+    // fechou sozinho na hora marcada. Sem distinguir, o fechamento automático
+    // apareceria assinado pelo dono — que estava dormindo — e ele não teria
+    // como saber, olhando o histórico, qual número alguém conferiu de fato
+    // contra a gaveta e qual o servidor congelou sem ninguém olhar.
+    const quem = fechamento.automatico
+      ? "⏰ fechou sozinho"
+      : escapar(fechamento.fechado_por_nome);
+
     botao.innerHTML =
       `<span class="data">${escapar(dataBonita(fechamento.data_operacional))}</span>` +
-      `<span class="quem">${fechamento.qtd_pedidos} pedidos · ` +
-      `${escapar(fechamento.fechado_por_nome)}</span>` +
+      `<span class="quem">${fechamento.qtd_pedidos} pedidos · ${quem}</span>` +
       `<span class="total">${reais(fechamento.total_centavos)}</span>`;
     botao.onclick = () => verDia(fechamento.data_operacional);
     li.append(botao);
